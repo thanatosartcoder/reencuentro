@@ -1,15 +1,51 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
-import { join, normalize, resolve } from 'node:path';
+import { Not, Repository } from 'typeorm';
 import sharp from 'sharp';
+import { Semaphore } from 'src/common/concurrency/semaphore';
+import { StorageService } from 'src/modules/storage/storage.service';
+import { StorageObjectNotFound } from 'src/modules/storage/storage.types';
 import { PersonPhoto } from './entities/person-photo.entity';
 import { PhotoOwnerType } from './persons.enums';
 
-/** Formato al que se normaliza todo: una sola ruta de decodificación. */
-const OUTPUT_FORMAT = 'jpeg';
+/**
+ * Recepción y almacenamiento de fotos.
+ *
+ * Las tres protecciones de este archivo salen de una misma medición: una foto
+ * de 12 megapíxeles ocupa unos 35 MB al decodificarse, y el límite por defecto
+ * de sharp admite hasta 268 megapíxeles, es decir 0,7 GB por imagen. Sin topes,
+ * una ráfaga de subidas agota la memoria y mata el proceso — llevándose por
+ * delante los reportes de personas, que no tienen nada que ver con las fotos.
+ */
+
+/**
+ * Formato de salida.
+ *
+ * WebP por defecto: sobre una imagen de perfil fotográfico pesa entre un 24 y
+ * un 37% menos que el JPEG equivalente por unos 15 ms más de codificación, y su
+ * soporte es universal desde hace años. En una app pensada para redes de
+ * emergencia, un tercio menos de bytes es un tercio menos de tiempo esperando
+ * a que cargue la cara de alguien.
+ *
+ * AVIF comprime todavía más, pero codificar cuesta varias veces lo mismo y ese
+ * coste se paga justo durante las ráfagas de subidas, que es el escenario que
+ * los topes de este archivo intentan sobrevivir. Queda disponible por
+ * configuración para quien tenga CPU de sobra.
+ */
+type OutputFormat = 'webp' | 'jpeg' | 'avif';
+
+const EXTENSION: Record<OutputFormat, string> = {
+  webp: 'webp',
+  jpeg: 'jpg',
+  avif: 'avif',
+};
 
 /**
  * Lado mayor tras el redimensionado. Suficiente para que un rostro sea
@@ -17,6 +53,16 @@ const OUTPUT_FORMAT = 'jpeg';
  * pequeño para subirse por una red saturada.
  */
 const MAX_DIMENSION = 1280;
+
+/**
+ * Tope de píxeles de entrada: 50 MP.
+ *
+ * Cubre con holgura cualquier cámara real —un teléfono tope de gama ronda los
+ * 50 MP y una réflex profesional los 45— y rechaza de plano las bombas de
+ * descompresión: un PNG de 20.000 × 20.000 pesa pocos cientos de kilobytes en
+ * disco y 1,2 GB al descomprimir.
+ */
+const MAX_INPUT_PIXELS = 50_000_000;
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 
@@ -31,14 +77,32 @@ export interface UploadedPhoto {
 export class PhotosService {
   private readonly logger = new Logger(PhotosService.name);
 
+  /**
+   * Tope de decodificaciones simultáneas.
+   *
+   * Cuatro por defecto: con el tope de 50 MP, el peor caso son unos 600 MB de
+   * pico, que un contenedor de 1 GB aguanta. Las subidas que no alcanzan cupo
+   * esperan en cola en vez de competir por memoria.
+   */
+  private readonly gate: Semaphore;
+
+  private readonly format: OutputFormat;
+  private readonly quality: number;
+
   constructor(
     @InjectRepository(PersonPhoto)
     private readonly repo: Repository<PersonPhoto>,
+    private readonly storage: StorageService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    this.gate = new Semaphore(this.config.get<number>('uploads.concurrency') ?? 4);
+    this.format = (this.config.get<string>('uploads.format') as OutputFormat) ?? 'webp';
+    this.quality = this.config.get<number>('uploads.quality') ?? 82;
 
-  private get uploadsDir(): string {
-    return resolve(this.config.get<string>('uploads.dir') ?? './uploads');
+    // libvips paraleliza internamente cada operación. Sumado al semáforo, sin
+    // esto un solo redimensionado puede ocupar todos los núcleos y dejar sin
+    // CPU al resto de la API.
+    sharp.concurrency(2);
   }
 
   /**
@@ -63,22 +127,94 @@ export class PhotosService {
       throw new BadRequestException(`Formato no admitido: ${input.file.mimetype}`);
     }
 
+    const maxBytes = this.config.get<number>('uploads.maxBytes') ?? 8_000_000;
+    if (input.file.size > maxBytes) {
+      throw new BadRequestException(
+        `La foto pesa ${Math.round(input.file.size / 1048576)} MB y el máximo es ${Math.round(maxBytes / 1048576)} MB`,
+      );
+    }
+
     const existing = await this.repo.findOne({ where: { clientUuid: input.clientUuid } });
     if (existing) return existing;
 
-    const pipeline = sharp(input.file.buffer, { failOn: 'none' })
-      // Respeta la orientación EXIF antes de descartar los metadatos, para que
-      // las fotos verticales no queden acostadas.
-      .rotate()
-      .resize({ width: MAX_DIMENSION, height: MAX_DIMENSION, fit: 'inside', withoutEnlargement: true })
-      .toFormat(OUTPUT_FORMAT, { quality: 78, mozjpeg: true });
+    // El espacio se consulta antes de procesar. Con almacenamiento de objetos
+    // siempre pasa; con disco local protege a la base de datos, que comparte
+    // volumen.
+    const room = await this.storage.hasRoomFor(maxBytes);
+    if (!room.ok) {
+      this.logger.error(
+        `Sin espacio para fotos (libres: ${Math.round((room.freeBytes ?? 0) / 1048576)} MB)`,
+      );
+      throw new ServiceUnavailableException(
+        'No hay espacio para almacenar fotos en este momento. El reporte sí se guardó; ' +
+          'puedes añadir la foto más tarde.',
+      );
+    }
 
-    const { data, info } = await pipeline.toBuffer({ resolveWithObject: true });
+    // Decodificar es lo caro. Solo esta parte pasa por el semáforo.
+    const { data, info } = await this.gate.run(async () => {
+      const resized = sharp(input.file.buffer, {
+        failOn: 'none',
+        limitInputPixels: MAX_INPUT_PIXELS,
+      })
+        // Respeta la orientación EXIF antes de descartar los metadatos, para que
+        // las fotos verticales no queden acostadas.
+        .rotate()
+        .resize({
+          width: MAX_DIMENSION,
+          height: MAX_DIMENSION,
+          fit: 'inside',
+          withoutEnlargement: true,
+          // Lanczos conserva mejor los bordes al reducir que el filtro por
+          // defecto. En una foto que se va a usar para reconocer una cara, la
+          // nitidez de los rasgos es justo lo que no se puede perder.
+          kernel: 'lanczos3',
+        });
 
-    const key = `${input.ownerType.toLowerCase()}/${input.ownerId}/${input.clientUuid}.jpg`;
-    const fullPath = join(this.uploadsDir, key);
-    await mkdir(join(fullPath, '..'), { recursive: true });
-    await writeFile(fullPath, data);
+      const encoded =
+        this.format === 'webp'
+          ? resized.webp({
+              quality: this.quality,
+              effort: 4,
+              // Evita el submuestreo de color donde haría daño. Los tonos de
+              // piel son lo primero que se degrada al submuestrear croma.
+              smartSubsample: true,
+            })
+          : this.format === 'avif'
+            ? resized.avif({ quality: Math.max(40, this.quality - 22), effort: 4 })
+            : resized.jpeg({
+                quality: this.quality,
+                mozjpeg: true,
+                chromaSubsampling: '4:2:0',
+              });
+
+      try {
+        return await encoded.toBuffer({ resolveWithObject: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Sin esto, una imagen que supera el tope de píxeles o viene corrupta
+        // sale como error 500 y quien reporta no entiende qué corregir.
+        if (/pixel limit|unsupported image|Input buffer/i.test(message)) {
+          throw new BadRequestException(
+            'No se pudo procesar la imagen. Puede estar dañada o tener dimensiones ' +
+              'excesivas (el máximo es 50 megapíxeles). Intenta con otra foto.',
+          );
+        }
+        throw error;
+      }
+    });
+
+    // La clave es el SHA-256 del resultado comprimido. Si esos bytes ya están
+    // almacenados —la misma foto de WhatsApp que suben tres familiares— no se
+    // vuelve a escribir nada.
+    const stored = await this.storage.putContent(
+      data,
+      `image/${this.format}`,
+      EXTENSION[this.format],
+    );
+    if (stored.deduplicated) {
+      this.logger.debug(`Foto deduplicada: ${stored.contentHash.slice(0, 12)}…`);
+    }
 
     const perceptualHash = await this.averageHash(data);
 
@@ -87,9 +223,11 @@ export class PhotosService {
         clientUuid: input.clientUuid,
         ownerType: input.ownerType,
         missingReportId: input.ownerType === PhotoOwnerType.MISSING_REPORT ? input.ownerId : null,
-        sightingReportId: input.ownerType === PhotoOwnerType.SIGHTING_REPORT ? input.ownerId : null,
-        storageKey: key,
-        mimeType: `image/${OUTPUT_FORMAT}`,
+        sightingReportId:
+          input.ownerType === PhotoOwnerType.SIGHTING_REPORT ? input.ownerId : null,
+        storageKey: stored.key,
+        contentHash: stored.contentHash,
+        mimeType: `image/${this.format}`,
         sizeBytes: data.length,
         width: info.width,
         height: info.height,
@@ -104,12 +242,19 @@ export class PhotosService {
 
   /**
    * Average hash: reduce la imagen a 8x8 en gris y marca cada píxel según esté
-   * por encima o por debajo del promedio. Detecta que dos reportes subieron la
-   * misma foto (algo frecuente cuando varios familiares reportan por separado)
-   * sin necesidad de invocar un servicio de comparación facial.
+   * por encima o por debajo del promedio.
+   *
+   * Complementa al SHA-256, no lo repite: el SHA detecta bytes idénticos y
+   * ahorra almacenamiento; este detecta imágenes *parecidas* —la misma foto
+   * recortada o reenviada por otra aplicación que la recomprimió— y es una
+   * señal para el motor de coincidencias.
    */
   private async averageHash(buffer: Buffer): Promise<string> {
-    const pixels = await sharp(buffer).greyscale().resize(8, 8, { fit: 'fill' }).raw().toBuffer();
+    const pixels = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
+      .greyscale()
+      .resize(8, 8, { fit: 'fill' })
+      .raw()
+      .toBuffer();
 
     const average = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
 
@@ -138,26 +283,53 @@ export class PhotosService {
     return distance;
   }
 
-  /** Lee un archivo del almacenamiento, impidiendo salir del directorio raíz. */
-  async read(storageKey: string): Promise<{ buffer: Buffer; mimeType: string }> {
-    const root = this.uploadsDir;
-    const target = resolve(root, normalize(storageKey));
-
-    // Sin esta comprobación, una clave como "../../.env" leería archivos fuera
-    // del almacenamiento de fotos.
-    if (!target.startsWith(root + '/')) {
-      throw new NotFoundException('Archivo no encontrado');
-    }
-
+  /**
+   * Devuelve un flujo, no el archivo entero.
+   *
+   * Leer la imagen completa a memoria en cada petición multiplica el consumo
+   * por cada lector concurrente. Con flujo, el proceso solo sostiene el trozo
+   * que va pasando hacia la red.
+   */
+  async openStream(storageKey: string) {
     try {
-      return { buffer: await readFile(target), mimeType: 'image/jpeg' };
-    } catch {
-      throw new NotFoundException('Archivo no encontrado');
+      return await this.storage.getStream(storageKey);
+    } catch (error) {
+      if (error instanceof StorageObjectNotFound) {
+        throw new NotFoundException('Archivo no encontrado');
+      }
+      throw error;
     }
   }
 
-  /** Fotos duplicadas de una dada, por hash perceptual exacto. */
-  async findDuplicates(perceptualHash: string): Promise<PersonPhoto[]> {
+  /**
+   * Desasocia una foto y borra los bytes solo si ningún otro reporte los usa.
+   *
+   * Con almacenamiento por contenido, varios reportes pueden compartir el mismo
+   * objeto. Borrarlo al eliminar una referencia dejaría a los demás con una
+   * imagen rota.
+   */
+  async remove(photoId: string): Promise<void> {
+    const photo = await this.repo.findOne({ where: { id: photoId } });
+    if (!photo) return;
+
+    await this.repo.delete(photoId);
+
+    const stillReferenced = await this.repo.count({
+      where: { contentHash: photo.contentHash, id: Not(photoId) },
+    });
+
+    if (stillReferenced === 0) {
+      await this.storage.delete(photo.storageKey);
+    }
+  }
+
+  /** Fotos idénticas byte a byte, por hash de contenido. */
+  async findByContentHash(contentHash: string): Promise<PersonPhoto[]> {
+    return this.repo.find({ where: { contentHash }, take: 20 });
+  }
+
+  /** Fotos visualmente parecidas, por hash perceptual. */
+  async findSimilar(perceptualHash: string): Promise<PersonPhoto[]> {
     return this.repo.find({ where: { perceptualHash }, take: 20 });
   }
 }

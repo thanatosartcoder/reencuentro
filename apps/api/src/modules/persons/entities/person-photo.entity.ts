@@ -44,9 +44,25 @@ export class PersonPhoto {
   @JoinColumn({ name: 'sightingReportId' })
   sightingReport: SightingReport | null;
 
-  /** Ruta relativa dentro del almacenamiento configurado. */
+  /**
+   * Clave dentro del almacenamiento. Es derivada del contenido, no inventada:
+   * `photos/ab/cd/<sha256>.jpg`.
+   */
   @Column({ type: 'varchar', length: 500 })
   storageKey: string;
+
+  /**
+   * SHA-256 de los bytes ya comprimidos.
+   *
+   * Permite que varios reportes compartan un mismo objeto: en una emergencia la
+   * misma foto se sube muchas veces —tres familiares con la imagen que circuló
+   * por WhatsApp— y con clave por contenido esos bytes se guardan una sola vez.
+   * También es lo que dice si se puede borrar el objeto al eliminar una
+   * referencia, o si todavía lo usa otro reporte.
+   */
+  @Index()
+  @Column({ type: 'char', length: 64 })
+  contentHash: string;
 
   @Column({ type: 'varchar', length: 100 })
   mimeType: string;

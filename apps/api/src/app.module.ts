@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { configuration } from './config/configuration';
 import { dataSourceOptions } from './database/data-source';
+import { StorageModule } from './modules/storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -58,6 +59,7 @@ import { HealthController } from './health.controller';
       { name: 'long', ttl: 60_000, limit: 300 },
     ]),
 
+    StorageModule,
     AuthModule,
     AuditModule,
     NotificationsModule,

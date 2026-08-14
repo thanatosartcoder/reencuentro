@@ -32,8 +32,31 @@ export const configuration = () => ({
   },
 
   uploads: {
-    dir: process.env.UPLOADS_DIR ?? './uploads',
     maxBytes: int(process.env.MAX_PHOTO_BYTES, 8_000_000),
+    // Decodificaciones simultáneas. Con el tope de 50 MP por imagen, cuatro son
+    // unos 600 MB de pico en el peor caso.
+    concurrency: int(process.env.PHOTO_CONCURRENCY, 4),
+    // webp | jpeg | avif. WebP pesa ~30% menos que JPEG a calidad equivalente
+    // y codifica rápido; AVIF comprime más pero su coste de CPU se paga en las
+    // ráfagas de subida.
+    format: process.env.PHOTO_FORMAT ?? 'webp',
+    quality: int(process.env.PHOTO_QUALITY, 82),
+  },
+
+  storage: {
+    // local | s3 (cualquier servicio compatible: R2, B2, MinIO, S3)
+    provider: process.env.STORAGE_PROVIDER ?? 'local',
+    localDir: process.env.UPLOADS_DIR ?? './uploads',
+    // Margen de disco que nunca se consume con fotos. El volumen lo comparte
+    // la base de datos y quedarse sin espacio impediría registrar reportes.
+    minFreeBytes: int(process.env.STORAGE_MIN_FREE_BYTES, 2 * 1024 ** 3),
+    s3: {
+      endpoint: process.env.S3_ENDPOINT ?? '',
+      region: process.env.S3_REGION ?? 'auto',
+      bucket: process.env.S3_BUCKET ?? '',
+      accessKeyId: process.env.S3_ACCESS_KEY_ID ?? '',
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? '',
+    },
   },
 
   matching: {
