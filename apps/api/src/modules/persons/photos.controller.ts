@@ -53,9 +53,11 @@ export class PhotosController {
     return {
       id: photo.id,
       url: `/media/${photo.storageKey}`,
+      urlAvif: photo.avifStorageKey ? `/media/${photo.avifStorageKey}` : null,
       width: photo.width,
       height: photo.height,
       sizeBytes: photo.sizeBytes,
+      avifSizeBytes: photo.avifSizeBytes,
     };
   }
 

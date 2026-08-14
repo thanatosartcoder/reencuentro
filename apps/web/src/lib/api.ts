@@ -240,6 +240,15 @@ export interface DamageView {
   publisher: string;
 }
 
+/** Foto con sus dos variantes; el navegador elige cuál descarga. */
+export interface PhotoRef {
+  id: string;
+  url: string;
+  urlAvif: string | null;
+  width: number | null;
+  height: number | null;
+}
+
 export interface MissingPerson {
   id: string;
   fullName: string;
@@ -262,7 +271,7 @@ export interface MissingPerson {
   status: string;
   reportedAt: string;
   hasPhoto: boolean;
-  photos: { id: string; url: string }[];
+  photos: PhotoRef[];
 }
 
 export interface SituationOverview {

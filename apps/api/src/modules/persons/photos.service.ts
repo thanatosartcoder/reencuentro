@@ -88,6 +88,8 @@ export class PhotosService {
 
   private readonly format: OutputFormat;
   private readonly quality: number;
+  /** Si además del formato principal se genera una variante AVIF. */
+  private readonly avifVariant: boolean;
 
   constructor(
     @InjectRepository(PersonPhoto)
@@ -98,6 +100,7 @@ export class PhotosService {
     this.gate = new Semaphore(this.config.get<number>('uploads.concurrency') ?? 4);
     this.format = (this.config.get<string>('uploads.format') as OutputFormat) ?? 'webp';
     this.quality = this.config.get<number>('uploads.quality') ?? 82;
+    this.avifVariant = this.config.get<boolean>('uploads.avifVariant') ?? true;
 
     // libvips paraleliza internamente cada operación. Sumado al semáforo, sin
     // esto un solo redimensionado puede ocupar todos los núcleos y dejar sin
@@ -151,8 +154,10 @@ export class PhotosService {
       );
     }
 
-    // Decodificar es lo caro. Solo esta parte pasa por el semáforo.
-    const { data, info } = await this.gate.run(async () => {
+    // Decodificar es lo caro y se hace una sola vez; de ese mismo búfer salen
+    // las dos variantes. Todo dentro del semáforo, que es lo que acota la
+    // memoria durante una ráfaga.
+    const { primary, avif } = await this.gate.run(async () => {
       const resized = sharp(input.file.buffer, {
         failOn: 'none',
         limitInputPixels: MAX_INPUT_PIXELS,
@@ -171,30 +176,14 @@ export class PhotosService {
           kernel: 'lanczos3',
         });
 
-      const encoded =
-        this.format === 'webp'
-          ? resized.webp({
-              quality: this.quality,
-              effort: 4,
-              // Evita el submuestreo de color donde haría daño. Los tonos de
-              // piel son lo primero que se degrada al submuestrear croma.
-              smartSubsample: true,
-            })
-          : this.format === 'avif'
-            ? resized.avif({ quality: Math.max(40, this.quality - 22), effort: 4 })
-            : resized.jpeg({
-                quality: this.quality,
-                mozjpeg: true,
-                chromaSubsampling: '4:2:0',
-              });
-
+      let encoded: { data: Buffer; info: sharp.OutputInfo };
       try {
-        return await encoded.toBuffer({ resolveWithObject: true });
+        encoded = await this.encode(resized.clone(), this.format);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // Sin esto, una imagen que supera el tope de píxeles o viene corrupta
         // sale como error 500 y quien reporta no entiende qué corregir.
-        if (/pixel limit|unsupported image|Input buffer/i.test(message)) {
+        if (/pixel limit|unsupported image|Input buffer|premature end/i.test(message)) {
           throw new BadRequestException(
             'No se pudo procesar la imagen. Puede estar dañada o tener dimensiones ' +
               'excesivas (el máximo es 50 megapíxeles). Intenta con otra foto.',
@@ -202,7 +191,28 @@ export class PhotosService {
         }
         throw error;
       }
+
+      // La variante AVIF es una mejora, no un requisito: si falla, la foto se
+      // guarda igual. Perder la foto de un desaparecido porque un códec se
+      // atragantó sería absurdo.
+      let secondary: Buffer | null = null;
+      if (this.avifVariant && this.format !== 'avif') {
+        try {
+          secondary = (await this.encode(resized.clone(), 'avif')).data;
+        } catch (error) {
+          this.logger.warn(
+            `No se pudo generar la variante AVIF: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+
+      return { primary: encoded, avif: secondary };
     });
+
+    const data = primary.data;
+    const info = primary.info;
 
     // La clave es el SHA-256 del resultado comprimido. Si esos bytes ya están
     // almacenados —la misma foto de WhatsApp que suben tres familiares— no se
@@ -216,6 +226,10 @@ export class PhotosService {
       this.logger.debug(`Foto deduplicada: ${stored.contentHash.slice(0, 12)}…`);
     }
 
+    const storedAvif = avif
+      ? await this.storage.putContent(avif, 'image/avif', 'avif')
+      : null;
+
     const perceptualHash = await this.averageHash(data);
 
     return this.repo.save(
@@ -227,6 +241,8 @@ export class PhotosService {
           input.ownerType === PhotoOwnerType.SIGHTING_REPORT ? input.ownerId : null,
         storageKey: stored.key,
         contentHash: stored.contentHash,
+        avifStorageKey: storedAvif?.key ?? null,
+        avifSizeBytes: avif?.length ?? null,
         mimeType: `image/${this.format}`,
         sizeBytes: data.length,
         width: info.width,
@@ -238,6 +254,29 @@ export class PhotosService {
         hasFace: null,
       }),
     );
+  }
+
+  /** Aplica los ajustes de codificación de un formato a una tubería ya redimensionada. */
+  private encode(
+    pipeline: sharp.Sharp,
+    format: OutputFormat,
+  ): Promise<{ data: Buffer; info: sharp.OutputInfo }> {
+    const encoded =
+      format === 'webp'
+        ? pipeline.webp({
+            quality: this.quality,
+            effort: 4,
+            // Evita el submuestreo de color donde haría daño. Los tonos de piel
+            // son lo primero que se degrada al submuestrear croma.
+            smartSubsample: true,
+          })
+        : format === 'avif'
+          ? // AVIF alcanza calidad equivalente con un número bastante menor: su
+            // escala no es comparable a la de WebP o JPEG.
+            pipeline.avif({ quality: Math.max(40, this.quality - 22), effort: 4 })
+          : pipeline.jpeg({ quality: this.quality, mozjpeg: true, chromaSubsampling: '4:2:0' });
+
+    return encoded.toBuffer({ resolveWithObject: true });
   }
 
   /**

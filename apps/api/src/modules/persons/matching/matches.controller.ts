@@ -15,6 +15,7 @@ import { CurrentOperator, OperatorGuard, Roles } from 'src/modules/auth/auth.gua
 import { OperatorClaims } from 'src/modules/auth/auth.service';
 import { OperatorRole } from 'src/modules/auth/entities/operator.entity';
 import { fromGeoPoint } from 'src/common/geo/geo.util';
+import { toPhotoView } from '../persons.presenter';
 import { MatchingService } from './matching.service';
 import { MatchCandidate } from '../entities/match-candidate.entity';
 
@@ -154,7 +155,7 @@ function toReviewView(candidate: MatchCandidate) {
       medicalNotes: missing.medicalNotes,
       reporterName: missing.reporterName,
       reporterRelationship: missing.reporterRelationship,
-      photos: (missing.photos ?? []).map((p) => ({ id: p.id, url: `/media/${p.storageKey}` })),
+      photos: (missing.photos ?? []).map(toPhotoView),
     },
     sighting: sighting && {
       id: sighting.id,
@@ -183,7 +184,7 @@ function toReviewView(candidate: MatchCandidate) {
       reporterName: sighting.reporterName,
       reporterRole: sighting.reporterRole,
       reporterOrganization: sighting.reporterOrganization,
-      photos: (sighting.photos ?? []).map((p) => ({ id: p.id, url: `/media/${p.storageKey}` })),
+      photos: (sighting.photos ?? []).map(toPhotoView),
     },
   };
 }

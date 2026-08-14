@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, type PhotoRef } from '@/lib/api';
 import { Field, Notice, SubmitButton, TextInput } from '@/components/Form';
 import { timeAgo } from '@/components/DecayMeter';
+import { Photo, PhotoPlaceholder } from '@/components/Photo';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
 
@@ -66,7 +67,7 @@ interface PersonSide {
   isMinor: boolean;
   department: string | null;
   municipality: string | null;
-  photos: { id: string; url: string }[];
+  photos: PhotoRef[];
 }
 
 export default function PanelPage() {
@@ -566,16 +567,14 @@ function Side({
 
       <div className="mt-3 flex gap-3">
         {person.photos[0] ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={person.photos[0].url}
+          <Photo
+            photo={person.photos[0]}
             alt=""
             className="h-24 w-24 shrink-0 border border-rule object-cover"
+            eager
           />
         ) : (
-          <div className="flex h-24 w-24 shrink-0 items-center justify-center border border-rule bg-paper-sunk">
-            <span className="eyebrow">sin foto</span>
-          </div>
+          <PhotoPlaceholder className="h-24 w-24 shrink-0" />
         )}
         <div className="min-w-0">
           <p className="text-[19px] font-bold leading-tight">

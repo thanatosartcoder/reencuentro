@@ -41,6 +41,10 @@ export const configuration = () => ({
     // ráfagas de subida.
     format: process.env.PHOTO_FORMAT ?? 'webp',
     quality: int(process.env.PHOTO_QUALITY, 82),
+    // Genera además una variante AVIF para los navegadores que la soportan.
+    // Cuesta una codificación extra por foto; el ahorro de bytes al servirla
+    // compensa con creces en redes lentas.
+    avifVariant: bool(process.env.PHOTO_AVIF_VARIANT, true),
   },
 
   storage: {

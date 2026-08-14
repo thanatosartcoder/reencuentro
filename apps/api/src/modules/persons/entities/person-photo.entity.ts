@@ -67,6 +67,24 @@ export class PersonPhoto {
   @Column({ type: 'varchar', length: 100 })
   mimeType: string;
 
+  /**
+   * Variante AVIF de la misma imagen.
+   *
+   * Se guardan las dos y es el navegador el que elige, con `<picture>`: AVIF
+   * donde se soporta, WebP en el resto. Negociar en el servidor mirando la
+   * cabecera `Accept` obligaría a consultar la base en cada petición de imagen
+   * y a marcar la respuesta con `Vary`, que fragmenta la caché del CDN. Dejar
+   * elegir al cliente no cuesta ni una consulta y cachea perfecto.
+   *
+   * Es null si la variante está desactivada o si su codificación falló: la foto
+   * en WebP siempre existe, la AVIF es una mejora opcional.
+   */
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  avifStorageKey: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  avifSizeBytes: number | null;
+
   @Column({ type: 'int' })
   sizeBytes: number;
 

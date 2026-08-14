@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api, type MissingPerson } from '@/lib/api';
 import { timeAgo } from '@/components/DecayMeter';
+import { Photo, PhotoPlaceholder } from '@/components/Photo';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   ACTIVE: { label: 'En búsqueda', color: 'var(--color-roja)' },
@@ -125,19 +126,13 @@ export default function DesaparecidosPage() {
             <li key={person.id} className="rule">
               <Link href={`/desaparecidos/${person.id}`} className="flex gap-3 py-4 hover:bg-paper-sunk">
                 {person.photos[0] ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={person.photos[0].url}
+                  <Photo
+                    photo={person.photos[0]}
                     alt=""
                     className="h-20 w-20 shrink-0 border border-rule object-cover"
                   />
                 ) : (
-                  <div className="flex h-20 w-20 shrink-0 items-center justify-center border border-rule bg-paper-sunk">
-                    <span className="eyebrow text-center leading-tight">sin
-                      <br />
-                      foto
-                    </span>
-                  </div>
+                  <PhotoPlaceholder className="h-20 w-20 shrink-0" />
                 )}
 
                 <div className="min-w-0 flex-1">

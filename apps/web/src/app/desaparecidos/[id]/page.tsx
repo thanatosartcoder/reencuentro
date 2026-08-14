@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { serverGet } from '@/lib/server-api';
 import type { MissingPerson } from '@/lib/api';
+import { Photo, PhotoPlaceholder } from '@/components/Photo';
 
 const STATUS: Record<string, { label: string; color: string; detail: string }> = {
   ACTIVE: {
@@ -44,16 +45,14 @@ export default async function DetallePage({ params }: { params: Promise<{ id: st
 
       <div className="mt-5 flex flex-wrap items-start gap-5">
         {person.photos[0] ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
-            src={person.photos[0].url}
+          <Photo
+            photo={person.photos[0]}
             alt={`Fotografía de ${person.fullName}`}
             className="h-44 w-44 border-2 border-ink object-cover"
+            eager
           />
         ) : (
-          <div className="flex h-44 w-44 items-center justify-center border-2 border-rule bg-paper-sunk">
-            <span className="eyebrow">sin foto</span>
-          </div>
+          <PhotoPlaceholder className="h-44 w-44 border-2" />
         )}
 
         <div className="min-w-0 flex-1">

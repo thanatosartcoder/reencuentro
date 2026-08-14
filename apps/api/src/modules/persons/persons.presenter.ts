@@ -1,4 +1,5 @@
 import { fromGeoPoint } from 'src/common/geo/geo.util';
+import type { PersonPhoto } from './entities/person-photo.entity';
 import { MissingPersonReport } from './entities/missing-person-report.entity';
 import { SightingReport } from './entities/sighting-report.entity';
 
@@ -10,6 +11,24 @@ import { SightingReport } from './entities/sighting-report.entity';
  * cual expondria telefono, correo y documento a cualquiera que consulte el
  * listado publico. Las vistas de aqui deciden explicitamente que sale.
  */
+
+/**
+ * Una foto con sus dos variantes.
+ *
+ * `url` es la canónica y siempre existe; `urlAvif` es opcional. El cliente las
+ * ofrece en un `<picture>` y el navegador elige la que sabe decodificar. Esa
+ * negociación en el cliente no cuesta ninguna consulta al servidor y deja que
+ * el CDN cachee cada variante bajo su propia dirección.
+ */
+export function toPhotoView(photo: PersonPhoto) {
+  return {
+    id: photo.id,
+    url: `/media/${photo.storageKey}`,
+    urlAvif: photo.avifStorageKey ? `/media/${photo.avifStorageKey}` : null,
+    width: photo.width,
+    height: photo.height,
+  };
+}
 
 /** Lo que ve cualquiera: suficiente para reconocer a alguien, nada mas. */
 export function toPublicMissing(report: MissingPersonReport) {
@@ -40,7 +59,7 @@ export function toPublicMissing(report: MissingPersonReport) {
     status: report.status,
     reportedAt: report.createdAt,
     hasPhoto: (report.photos?.length ?? 0) > 0,
-    photos: (report.photos ?? []).map((p) => ({ id: p.id, url: `/media/${p.storageKey}` })),
+    photos: (report.photos ?? []).map(toPhotoView),
   };
 }
 
@@ -105,7 +124,7 @@ export function toPublicSighting(sighting: SightingReport) {
     seenAt: sighting.seenAt,
     status: sighting.status,
     reportedAt: sighting.createdAt,
-    photos: (sighting.photos ?? []).map((p) => ({ id: p.id, url: `/media/${p.storageKey}` })),
+    photos: (sighting.photos ?? []).map(toPhotoView),
   };
 }
 
