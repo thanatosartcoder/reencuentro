@@ -1,0 +1,206 @@
+@import 'tailwindcss';
+
+/**
+ * Sistema visual: panel de instrumento, no tablero de métricas.
+ *
+ * Todas las decisiones salen de una restricción concreta, no de una estética:
+ * esto se lee a pleno sol, en un teléfono barato con la pantalla rayada, por
+ * alguien con las manos temblando y una conexión de 2G. Eso obliga a contraste
+ * alto, tipografía grande, pesos gruesos, áreas de toque generosas y color
+ * usado únicamente para codificar significado.
+ *
+ * La paleta no es decorativa: reproduce el código de alertas que la gestión de
+ * riesgo colombiana ya usa (roja, naranja, amarilla), de modo que el color
+ * significa lo mismo aquí que en la señalización oficial.
+ */
+@theme {
+  /* Sustrato. Gris papel frío, no crema: la crema tiñe de cálido las fotos de
+     personas desaparecidas, que es lo último que debería pasar. */
+  --color-paper: #f2f3f1;
+  --color-paper-sunk: #e6e8e4;
+  --color-ink: #12161c;
+  --color-ink-soft: #3d4753;
+  --color-ink-faint: #6b7684;
+  --color-rule: #c9cdc7;
+
+  /* Código de alerta. Cada uno significa una cosa y solo se usa para eso. */
+  --color-roja: #d0342c;
+  --color-naranja: #e07b18;
+  --color-amarilla: #d9ae1f;
+  --color-via: #1e7a5a;
+  --color-signal: #2b6cb0;
+
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Toda cifra del sistema es monoespaciada y tabular: coordenadas, distancias,
+     confianzas, tiempos. Las columnas de números se alinean y son comparables
+     de un vistazo, que es como se lee un instrumento. */
+  --font-mono:
+    ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Base de 17px: un punto por encima de lo habitual. Se lee a un brazo de
+       distancia bajo el sol. */
+    font-size: 17px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Cualquier número es tabular por defecto. */
+  .num,
+  time,
+  code {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-signal);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+}
+
+@layer components {
+  /* Etiqueta de sección. Mayúsculas espaciadas, como el encabezado de un
+     boletín oficial. Estructura, no decoración. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+
+  /* Área de toque mínima de 56 px: se pulsa con guantes o con prisa. */
+  .target {
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .rule {
+    border-top: 1px solid var(--color-rule);
+  }
+
+  /**
+   * Medidor de decaimiento — el elemento firma.
+   *
+   * Todo dato de este sistema tiene una edad, y el modo de fallo más peligroso
+   * es confiar en información vencida: mandar una ambulancia por una vía que
+   * dejó de estar despejada hace seis horas. El medidor hace visible esa edad
+   * en el mismo lugar donde se lee el dato, en lugar de esconderla detrás de
+   * una marca de tiempo que nadie interpreta.
+   */
+  .decay {
+    position: relative;
+    height: 6px;
+    background: var(--color-paper-sunk);
+    overflow: hidden;
+  }
+
+  .decay-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    /* Bandas duras, no degradado: el degradado sugiere una transición suave
+       cuando lo que se comunica es un umbral. */
+    background: currentColor;
+  }
+
+  /**
+   * Recuadro de resumen de un municipio sobre el mapa.
+   *
+   * Es una ficha de datos, no un pin: la cifra que encabeza va con su unidad
+   * escrita al lado, porque un número suelto sobre un mapa de emergencia se
+   * malinterpreta y aquí confundir edificaciones con personas no es un detalle.
+   */
+  .agg-marker {
+    display: flex;
+    align-items: stretch;
+    background: var(--color-paper);
+    border: 2px solid var(--color-ink);
+    box-shadow: 0 2px 0 rgba(18, 22, 28, 0.35);
+    cursor: pointer;
+    text-align: left;
+    padding: 0;
+    /* Ancla inferior: el recuadro se apoya sobre la coordenada, como una
+       etiqueta clavada, en lugar de taparla. */
+    transform: translateY(-4px);
+  }
+
+  .agg-marker:hover,
+  .agg-marker:focus-visible {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  .agg-bar {
+    width: 5px;
+    flex-shrink: 0;
+  }
+
+  .agg-body {
+    display: block;
+    padding: 3px 7px 4px;
+    line-height: 1.1;
+  }
+
+  .agg-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .agg-unit {
+    font-size: 10px;
+    margin-left: 3px;
+  }
+
+  .agg-name {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 1px;
+    white-space: nowrap;
+  }
+
+  /* Marca de la fuente oficial. Distingue las cifras de la UNGRD y la Fiscalía
+     de las que genera esta plataforma; mezclarlas le daría a las propias la
+     autoridad de las oficiales. */
+  .stamp {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: 1px solid currentColor;
+    padding: 0.125rem 0.375rem;
+    display: inline-block;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

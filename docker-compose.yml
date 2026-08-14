@@ -1,0 +1,37 @@
+services:
+  db:
+    # Build multiarch: corre nativo en Apple Silicon (el oficial postgis/postgis
+    # solo publica amd64 y se emula, con una penalizacion de rendimiento notoria).
+    image: imresamu/postgis:16-3.5-alpine
+    container_name: reencuentro-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reencuentro
+      POSTGRES_PASSWORD: reencuentro
+      POSTGRES_DB: reencuentro
+    ports:
+      - '5433:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reencuentro -d reencuentro']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Necesario solo cuando la API corre en mas de una instancia:
+  # el adapter de Redis reparte los eventos de WebSocket entre nodos.
+  redis:
+    image: redis:7-alpine
+    container_name: reencuentro-redis
+    restart: unless-stopped
+    ports:
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db_data:

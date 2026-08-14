@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" fill="#12161c"/>
+  <!-- Dos trazos que convergen: los dos reportes que el sistema une. -->
+  <path d="M10 46 L26 22" stroke="#f2f3f1" stroke-width="5" stroke-linecap="square"/>
+  <path d="M54 46 L38 22" stroke="#f2f3f1" stroke-width="5" stroke-linecap="square"/>
+  <rect x="27" y="16" width="10" height="10" fill="#d0342c"/>
+</svg>

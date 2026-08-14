@@ -1,0 +1,23 @@
+{
+  "name": "reencuentro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reporte de personas desaparecidas y mapa colaborativo para la emergencia del sismo del 10 de agosto de 2026 en Colombia.",
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d db",
+    "api:install": "npm --prefix apps/api install",
+    "api:migrate": "npm --prefix apps/api run migration:run",
+    "api:seed": "npm --prefix apps/api run seed",
+    "ingest:hdx": "npm --prefix apps/api run ingest:hdx",
+    "api:dev": "npm --prefix apps/api run start:dev",
+    "api:test": "npm --prefix apps/api test",
+    "web:install": "npm --prefix apps/web install",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build",
+    "typecheck": "npm --prefix apps/api run typecheck && npm --prefix apps/web run typecheck",
+    "env:init": "node scripts/init-env.mjs",
+    "setup": "npm run env:init && npm run db:up && npm run api:install && npm run web:install && npm run api:migrate && npm run api:seed"
+  }
+}

@@ -1,0 +1,129 @@
+import { fromGeoPoint } from 'src/common/geo/geo.util';
+import { MissingPersonReport } from './entities/missing-person-report.entity';
+import { SightingReport } from './entities/sighting-report.entity';
+
+/**
+ * Proyecciones de salida.
+ *
+ * Una entidad nunca se serializa directamente hacia el cliente. Las columnas
+ * cifradas se descifran en memoria al leerlas, asi que devolver la entidad tal
+ * cual expondria telefono, correo y documento a cualquiera que consulte el
+ * listado publico. Las vistas de aqui deciden explicitamente que sale.
+ */
+
+/** Lo que ve cualquiera: suficiente para reconocer a alguien, nada mas. */
+export function toPublicMissing(report: MissingPersonReport) {
+  const coords = fromGeoPoint(report.lastSeenLocation);
+  return {
+    id: report.id,
+    fullName: report.fullName,
+    aliases: report.aliases,
+    age: report.age,
+    ageMin: report.ageMin,
+    ageMax: report.ageMax,
+    sex: report.sex,
+    heightCm: report.heightCm,
+    build: report.build,
+    skinTone: report.skinTone,
+    hairColor: report.hairColor,
+    clothingDescription: report.clothingDescription,
+    distinguishingMarks: report.distinguishingMarks,
+    isMinor: report.isMinor,
+    // Solo municipio y departamento. La coordenada exacta de la ultima
+    // ubicacion de un menor desaparecido no se publica: quien necesita ese
+    // dato para buscar tiene acceso autenticado.
+    department: report.department,
+    municipality: report.municipality,
+    lastSeenApproximateLocation: report.isMinor ? null : coords,
+    lastSeenAt: report.lastSeenAt,
+    circumstances: report.circumstances,
+    status: report.status,
+    reportedAt: report.createdAt,
+    hasPhoto: (report.photos?.length ?? 0) > 0,
+    photos: (report.photos ?? []).map((p) => ({ id: p.id, url: `/media/${p.storageKey}` })),
+  };
+}
+
+/** Lo que ve el propio reportante con su claim token: incluye sus datos de contacto. */
+export function toOwnerMissing(report: MissingPersonReport) {
+  return {
+    ...toPublicMissing(report),
+    lastSeenLocation: fromGeoPoint(report.lastSeenLocation),
+    lastSeenAddress: report.lastSeenAddress,
+    documentType: report.documentType,
+    documentNumber: report.documentNumber,
+    medicalNotes: report.medicalNotes,
+    reporterName: report.reporterName,
+    reporterPhone: report.reporterPhone,
+    reporterEmail: report.reporterEmail,
+    reporterRelationship: report.reporterRelationship,
+    consentPublicListing: report.consentPublicListing,
+    resolutionNotes: report.resolutionNotes,
+    resolvedAt: report.resolvedAt,
+    clientUuid: report.clientUuid,
+    revision: report.revision,
+  };
+}
+
+/**
+ * Lo que ve un validador acreditado: todo, porque tiene que poder decidir si
+ * dos registros son la misma persona. Cada lectura queda en la bitacora.
+ */
+export function toOperatorMissing(report: MissingPersonReport) {
+  return {
+    ...toOwnerMissing(report),
+    source: report.source,
+    externalReference: report.externalReference,
+    mergedIntoId: report.mergedIntoId,
+    updatedAt: report.updatedAt,
+  };
+}
+
+export function toPublicSighting(sighting: SightingReport) {
+  const coords = fromGeoPoint(sighting.location);
+  return {
+    id: sighting.id,
+    kind: sighting.kind,
+    fullName: sighting.fullName,
+    estimatedAgeMin: sighting.estimatedAgeMin,
+    estimatedAgeMax: sighting.estimatedAgeMax,
+    sex: sighting.sex,
+    heightCm: sighting.heightCm,
+    build: sighting.build,
+    skinTone: sighting.skinTone,
+    hairColor: sighting.hairColor,
+    clothingDescription: sighting.clothingDescription,
+    distinguishingMarks: sighting.distinguishingMarks,
+    // El estado de salud es un dato sensible: se publica que la persona fue
+    // vista, no en que condicion. El detalle queda para el validador y la
+    // familia, no para el listado abierto.
+    isMinor: sighting.isMinor,
+    department: sighting.department,
+    municipality: sighting.municipality,
+    facilityName: sighting.facilityName,
+    approximateLocation: sighting.isMinor ? null : coords,
+    seenAt: sighting.seenAt,
+    status: sighting.status,
+    reportedAt: sighting.createdAt,
+    photos: (sighting.photos ?? []).map((p) => ({ id: p.id, url: `/media/${p.storageKey}` })),
+  };
+}
+
+export function toOperatorSighting(sighting: SightingReport) {
+  return {
+    ...toPublicSighting(sighting),
+    condition: sighting.condition,
+    location: fromGeoPoint(sighting.location),
+    address: sighting.address,
+    documentType: sighting.documentType,
+    documentNumber: sighting.documentNumber,
+    notes: sighting.notes,
+    reporterName: sighting.reporterName,
+    reporterPhone: sighting.reporterPhone,
+    reporterRole: sighting.reporterRole,
+    reporterOrganization: sighting.reporterOrganization,
+    source: sighting.source,
+    clientUuid: sighting.clientUuid,
+    revision: sighting.revision,
+  };
+}
