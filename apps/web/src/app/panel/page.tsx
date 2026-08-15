@@ -8,6 +8,7 @@ import { Photo, PhotoPlaceholder } from '@/components/Photo';
 import { ChangePassword } from '@/components/ChangePassword';
 import { DataSources } from '@/components/DataSources';
 import { Operators } from '@/components/Operators';
+import { Backups } from '@/components/Backups';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
 const MUST_CHANGE_KEY = 'reencuentro.mustChangePassword';
@@ -288,6 +289,8 @@ function Queue({
       <Operators token={token} />
 
       <DataSources token={token} />
+
+      <Backups token={token} />
 
       <PfifExport token={token} />
 
