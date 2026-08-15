@@ -284,6 +284,15 @@ async function seedZones(dataSource: DataSource): Promise<void> {
   const repo = dataSource.getRepository(ZoneReport);
   let created = 0;
 
+  // La siembra describe el sismo de agosto: sus zonas pertenecen a ese evento.
+  const eventos: { id: string }[] = await dataSource.query(
+    `SELECT id FROM events WHERE slug = 'sismo-san-jose-del-palmar-2026'`,
+  );
+  const eventId = eventos[0]?.id;
+  if (!eventId) {
+    throw new Error('Falta el evento del sismo. Ejecuta las migraciones antes de sembrar.');
+  }
+
   for (const zone of SEED_ZONES) {
     const existing = await repo.findOne({ where: { clientUuid: zone.clientUuid } });
     if (existing) continue;
@@ -293,6 +302,7 @@ async function seedZones(dataSource: DataSource): Promise<void> {
 
     await repo.save(
       repo.create({
+        eventId,
         clientUuid: zone.clientUuid,
         type: zone.type,
         location: toGeoPoint(zone.lat, zone.lon),

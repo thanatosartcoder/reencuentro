@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventsService } from 'src/modules/events/events.service';
 import { Repository } from 'typeorm';
 import { parseBbox } from 'src/common/geo/geo.util';
 import { DamageAssessment } from './entities/damage-assessment.entity';
@@ -12,6 +13,7 @@ export class DamageService {
     private readonly repo: Repository<DamageAssessment>,
     @InjectRepository(DamageCoverage)
     private readonly coverageRepo: Repository<DamageCoverage>,
+    private readonly events: EventsService,
   ) {}
 
   /**

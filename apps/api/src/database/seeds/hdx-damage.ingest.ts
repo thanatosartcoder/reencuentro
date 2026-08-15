@@ -21,7 +21,18 @@ async function main(): Promise<void> {
 
   const startedAt = new Date();
   try {
-    const result = await ingestHdxDamage(AppDataSource, { force });
+    // Se atribuye a la emergencia principal, igual que hace el cron. Se
+    // consulta aquí y no se pasa por argumento para que ejecutarlo a mano y
+    // automáticamente produzcan exactamente lo mismo.
+    const eventos: { id: string }[] = await AppDataSource.query(
+      `SELECT id FROM events ORDER BY "isPrimary" DESC, "occurredAt" DESC LIMIT 1`,
+    );
+    const eventId = eventos[0]?.id;
+    if (!eventId) {
+      throw new Error('No hay ninguna emergencia configurada. Ejecuta las migraciones.');
+    }
+
+    const result = await ingestHdxDamage(AppDataSource, { force, eventId });
 
     // Se registra igual que si lo hubiera hecho el cron: si no, la detección de
     // cambios se queda sin versión con la que comparar y la próxima ejecución

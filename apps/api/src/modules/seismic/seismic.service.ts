@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { haversineMeters, parseBbox, toGeoPoint, type GeoPoint } from 'src/common/geo/geo.util';
 import { EVENT } from 'src/modules/situation/situation.data';
 import { RealtimeGateway } from 'src/modules/notifications/realtime.gateway';
+import { EventsService } from 'src/modules/events/events.service';
 import { SeismicEvent } from './entities/seismic-event.entity';
 
 /**
@@ -59,6 +60,7 @@ export class SeismicService {
     @InjectRepository(SeismicEvent)
     private readonly repo: Repository<SeismicEvent>,
     private readonly gateway: RealtimeGateway,
+    private readonly events: EventsService,
   ) {}
 
   /**
@@ -71,6 +73,11 @@ export class SeismicService {
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async sync(): Promise<{ fetched: number; created: number }> {
+    // Las réplicas pertenecen a la emergencia que se está cubriendo. La fase
+    // siguiente parametriza también el epicentro y el radio, que hoy siguen
+    // siendo los del sismo de agosto.
+    const eventId = await this.events.primaryId();
+
     const params = new URLSearchParams({
       format: 'geojson',
       starttime: EVENT.occurredAt,
@@ -144,7 +151,7 @@ export class SeismicService {
         // profundidad durante las horas siguientes a cada evento.
         await this.repo.update(existing.id, values);
       } else {
-        await this.repo.save(this.repo.create(values));
+        await this.repo.save(this.repo.create({ ...values, eventId }));
         created++;
 
         // Una réplica fuerte cambia lo que la gente necesita saber ahora mismo.
@@ -174,7 +181,11 @@ export class SeismicService {
     sinceHours?: number;
     limit?: number;
   }): Promise<SeismicView[]> {
-    const qb = this.repo.createQueryBuilder('e');
+    // Las réplicas pertenecen a su sismo: listarlas junto a las de otro daría
+    // una secuencia que nunca ocurrió.
+    const qb = this.repo
+      .createQueryBuilder('e')
+      .where('e."eventId" = :eventId', { eventId: await this.events.primaryId() });
 
     if (options.minMagnitude !== undefined) {
       qb.andWhere('e.magnitude >= :minMag', { minMag: options.minMagnitude });

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { EventsService } from 'src/modules/events/events.service';
 import { haversineMeters, toGeoPoint } from 'src/common/geo/geo.util';
 import { ZONE_TYPE_CONFIG, ZoneReportType } from 'src/modules/geo/geo.enums';
 import { AFFECTED_CAPITALS, EPICENTER_TOWN } from 'src/modules/situation/situation.data';
@@ -72,7 +73,10 @@ export interface MunicipalityAggregate {
 
 @Injectable()
 export class OverviewService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly events: EventsService,
+  ) {}
 
   async byMunicipality(): Promise<{
     items: MunicipalityAggregate[];
@@ -87,12 +91,18 @@ export class OverviewService {
     // alternativa —un solo SQL con cinco FULL OUTER JOIN sobre agregados— es
     // más difícil de leer y de corregir, y aquí la cardinalidad es de decenas
     // de municipios, no de millones de filas.
+    // Las capas de contexto se acotan a la emergencia en curso: sumar
+    // derrumbes de dos catástrofes distintas daría un mapa que no describe
+    // ninguna. Los desaparecidos y los avistamientos NO se acotan, a propósito:
+    // una persona puede haber sido reportada durante otra emergencia.
+    const eventId = await this.events.primaryId();
+
     const [missing, sightings, zones, damage, aftershocks] = await Promise.all([
       this.missingByMunicipality(),
       this.sightingsByMunicipality(),
-      this.zonesByMunicipality(),
-      this.damageByCity(),
-      this.aftershockPoints(),
+      this.zonesByMunicipality(eventId),
+      this.damageByCity(eventId),
+      this.aftershockPoints(eventId),
     ]);
 
     const merged = new Map<string, MunicipalityAggregate>();
@@ -175,7 +185,9 @@ export class OverviewService {
     // que un dataset futuro que cubra varios municipios a la vez funcione sin
     // tocar este código.
     const coverage = await this.dataSource.query<{ city: string; area: string }[]>(
-      `SELECT city, ST_AsText(area::geometry) AS area FROM damage_coverage`,
+      `SELECT city, ST_AsText(area::geometry) AS area FROM damage_coverage
+         WHERE "eventId" = $1`,
+      [eventId],
     );
 
     if (coverage.length) {
@@ -184,9 +196,10 @@ export class OverviewService {
         const [inside] = await this.dataSource.query<{ hit: boolean }[]>(
           `SELECT EXISTS (
              SELECT 1 FROM damage_coverage
-             WHERE ST_Intersects(area::geometry, ST_SetSRID(ST_MakePoint($1, $2), 4326))
+             WHERE "eventId" = $3
+               AND ST_Intersects(area::geometry, ST_SetSRID(ST_MakePoint($1, $2), 4326))
            ) AS hit`,
-          [entry.point.longitude, entry.point.latitude],
+          [entry.point.longitude, entry.point.latitude, eventId],
         );
         entry.danos.evaluado = Boolean(inside?.hit) || entry.danos.edificaciones > 0;
       }
@@ -269,7 +282,13 @@ export class OverviewService {
     danos: number;
     replicas: { conteo: number; magnitudMaxima: number | null };
   }> {
+    // Dos arreglos, no uno: Postgres rechaza una consulta a la que le sobran
+    // parámetros. Las personas se cuentan SIN acotar por evento —un desaparecido
+    // de otra emergencia sigue siendo alguien que puede estar cerca de aquí— y
+    // las capas de contexto sí se acotan, porque sumar derrumbes de dos
+    // catástrofes describiría un lugar que no existe.
     const params = [longitude, latitude, radiusMeters];
+    const paramsConEvento = [...params, await this.events.primaryId()];
     const point = `ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography`;
 
     const [missing, sightings, zoneRows, damage, quakes] = await Promise.all([
@@ -292,19 +311,21 @@ export class OverviewService {
       this.dataSource.query<{ type: string; conteo: string }[]>(
         `SELECT type, COUNT(*) AS conteo FROM zone_reports
          WHERE "deletedAt" IS NULL AND status = 'ACTIVE'
+           AND "eventId" = $4
            AND ST_DWithin("location", ${point}, $3)
          GROUP BY type`,
-        params,
+        paramsConEvento,
       ),
       this.dataSource.query<{ total: string }[]>(
         `SELECT COUNT(*) AS total FROM damage_assessments
-         WHERE damaged = true AND ST_DWithin(footprint, ${point}, $3)`,
-        params,
+         WHERE damaged = true AND "eventId" = $4
+           AND ST_DWithin(footprint, ${point}, $3)`,
+        paramsConEvento,
       ),
       this.dataSource.query<{ conteo: string; max_mag: number | null }[]>(
         `SELECT COUNT(*) AS conteo, MAX(magnitude) AS max_mag FROM seismic_events
-         WHERE ST_DWithin("location", ${point}, $3)`,
-        params,
+         WHERE "eventId" = $4 AND ST_DWithin("location", ${point}, $3)`,
+        paramsConEvento,
       ),
     ]);
 
@@ -384,7 +405,7 @@ export class OverviewService {
     `);
   }
 
-  private zonesByMunicipality() {
+  private zonesByMunicipality(eventId: string) {
     return this.dataSource.query<
       (MunicipalityRow & { type: string; conteo: number; severidad_max: number })[]
     >(`
@@ -395,29 +416,31 @@ export class OverviewService {
              ST_X(ST_Centroid(ST_Collect("location"::geometry))) AS lon
       FROM zone_reports
       WHERE "deletedAt" IS NULL AND status = 'ACTIVE' AND municipality IS NOT NULL
+        AND "eventId" = $1
       GROUP BY municipality, department, type
-    `);
+    `, [eventId]);
   }
 
-  private damageByCity() {
+  private damageByCity(eventId: string) {
     return this.dataSource.query<(MunicipalityRow & { edificaciones: number })[]>(`
       SELECT city AS municipality, department,
              COUNT(*)::int AS edificaciones,
              ST_Y(ST_Centroid(ST_Collect(footprint::geometry))) AS lat,
              ST_X(ST_Centroid(ST_Collect(footprint::geometry))) AS lon
       FROM damage_assessments
-      WHERE damaged = true
+      WHERE damaged = true AND "eventId" = $1
       GROUP BY city, department
-    `);
+    `, [eventId]);
   }
 
-  private aftershockPoints() {
+  private aftershockPoints(eventId: string) {
     return this.dataSource.query<{ lat: number; lon: number; magnitude: number }[]>(`
       SELECT ST_Y("location"::geometry) AS lat,
              ST_X("location"::geometry) AS lon,
              magnitude
       FROM seismic_events
-    `);
+      WHERE "eventId" = $1
+    `, [eventId]);
   }
 }
 

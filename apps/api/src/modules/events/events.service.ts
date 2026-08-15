@@ -65,6 +65,35 @@ export class EventsService {
     return row ? toView(row) : null;
   }
 
+  /**
+   * Id del evento al que se atribuye lo que llega sin especificar.
+   *
+   * Se consulta cada vez en vez de cachearse: es una lectura indexada de una
+   * fila y no está en ningún camino caliente, mientras que una caché obligaría
+   * a reiniciar el servicio al cambiar de emergencia — justo el día en que
+   * nadie quiere reiniciar nada.
+   */
+  async primaryId(): Promise<string> {
+    const row =
+      (await this.repo.findOne({ where: { isPrimary: true }, select: ['id'] })) ??
+      (await this.repo.findOne({ where: {}, order: { occurredAt: 'DESC' }, select: ['id'] }));
+
+    if (!row) {
+      throw new NotFoundException(
+        'No hay ninguna emergencia configurada. Ejecuta las migraciones.',
+      );
+    }
+    return row.id;
+  }
+
+  /** Id a partir del slug, para acotar consultas por evento. */
+  async idFor(slug?: string | null): Promise<string> {
+    if (!slug) return this.primaryId();
+    const row = await this.repo.findOne({ where: { slug }, select: ['id'] });
+    if (!row) throw new NotFoundException('No se cubre ninguna emergencia con ese identificador.');
+    return row.id;
+  }
+
   /** Cifras oficiales del evento, si ya hay balance publicado. */
   async officialFor(slug: string): Promise<ReturnType<typeof officialFiguresFor>> {
     await this.bySlug(slug); // 404 si no existe, antes de mirar el código
