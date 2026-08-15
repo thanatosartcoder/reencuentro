@@ -6,6 +6,7 @@ import { Field, Notice, SubmitButton, TextInput } from '@/components/Form';
 import { timeAgo } from '@/components/DecayMeter';
 import { Photo, PhotoPlaceholder } from '@/components/Photo';
 import { ChangePassword } from '@/components/ChangePassword';
+import { DataSources } from '@/components/DataSources';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
 const MUST_CHANGE_KEY = 'reencuentro.mustChangePassword';
@@ -270,6 +271,8 @@ function Queue({
         Ninguna familia recibe un aviso hasta que alguien confirme aquí. Si tienes dudas,
         recházala: un rechazo no le llega a nadie, una confirmación equivocada sí.
       </p>
+
+      <DataSources token={token} />
 
       <PfifExport token={token} />
 
