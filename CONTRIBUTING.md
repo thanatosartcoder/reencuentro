@@ -121,6 +121,20 @@ git push origin arregla/nombre-corto
 
 Abre el PR con la plantilla. Rellenarla no es burocracia: la pregunta *"¿qué se rompe si esto está mal?"* es la que más errores ha atrapado en este proyecto.
 
+### Fusionar es publicar
+
+`main` está enlazada a los dos despliegues. Cuando un PR entra:
+
+- **Vercel** publica la web.
+- **Railway** reconstruye la API y, al arrancar el contenedor, **corre las migraciones pendientes** contra la base de producción.
+
+No hay un paso manual entre fusionar y que una familia lo esté usando. Eso significa dos cosas para quien revisa:
+
+- Una migración mal escrita se aplica sola. El `down` tiene que existir y tiene que ser correcto.
+- No hay entorno de pruebas intermedio. Lo que no se pueda comprobar en local o en la CI, se comprueba pensando.
+
+La CI en verde es requisito para fusionar, y nadie —tampoco quien mantiene el proyecto— puede empujar directo a `main`. Esa es toda la red que hay.
+
 ### Sobre los commits
 
 Escribe **por qué**, no solo qué. El código dice qué hace; lo que se pierde es la razón.
