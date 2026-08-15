@@ -10,6 +10,13 @@ set -e
 # "solo esta vez porque es urgente" no protege de nada, y este proyecto toca
 # datos de personas desaparecidas: las prisas son justo cuando más falta hace.
 #
+# Las aprobaciones exigidas van en CERO a propósito: GitHub no permite aprobar
+# el propio PR, así que con un mantenedor único exigir una aprobación deja la
+# rama en punto muerto. La protección real sigue en pie —no se puede empujar a
+# main, la CI tiene que pasar— y quien contribuye desde fuera no puede fusionar
+# nada porque no tiene permiso de escritura. Cuando el proyecto tenga un segundo
+# mantenedor, sube este número a 1 y activa require_code_owner_reviews.
+#
 # Uso:  ./scripts/setup-github.sh <usuario>/<repo> [--publico]
 
 REPO="${1:?Falta el repositorio. Ejemplo: ./scripts/setup-github.sh usuario/reencuentro}"
@@ -44,8 +51,8 @@ gh api -X PUT "repos/$REPO/branches/main/protection" \
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
-    "required_approving_review_count": 1,
-    "require_code_owner_reviews": true,
+    "required_approving_review_count": 0,
+    "require_code_owner_reviews": false,
     "dismiss_stale_reviews": true
   },
   "restrictions": null,
