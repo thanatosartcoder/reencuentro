@@ -1,0 +1,46 @@
+name: Mejora
+description: Una idea para que la plataforma sirva mejor
+labels: ['mejora']
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: |
+        Empieza por el problema, no por la solución. Es lo que permite pensar
+        alternativas que quizá no habías considerado.
+      placeholder: |
+        Quien reporta desde un albergue tiene que escribir el nombre del sitio
+        a mano, y cada persona lo escribe distinto. Luego no hay forma de saber
+        que tres reportes hablan del mismo albergue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Qué propones
+      description: Si tienes una idea concreta. Si no, déjalo vacío.
+
+  - type: dropdown
+    id: a-quien-sirve
+    attributes:
+      label: A quién le sirve
+      options:
+        - A una familia buscando a alguien
+        - A quien está en terreno reportando
+        - A quien valida coincidencias en el panel
+        - A quien coordina la respuesta
+        - A quien despliega o mantiene la plataforma
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: offline
+    attributes:
+      label: Sin conexión
+      description: |
+        La plataforma está pensada para funcionar sin señal. Si tu propuesta
+        depende de estar conectado, no es descalificante, pero conviene saberlo.
+      options:
+        - label: Esto tendría que funcionar también sin conexión

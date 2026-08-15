@@ -19,6 +19,11 @@ Por eso la integración va en la otra dirección: esta plataforma **exporta en P
 
 **Los datos personales aquí son de los sensibles.** Fotos, ubicaciones, estado de salud y datos de menores. Cae bajo la Ley 1581 de 2012. Lo implementado: cifrado AES-256-GCM en reposo para documento, teléfono y correo; índices ciegos por HMAC para poder buscar sin descifrar; bitácora de todo acceso a datos completos; redacción por defecto en los listados públicos. Lo que falta antes de producción está más abajo.
 
+**¿Quieres contribuir?** Lee [CONTRIBUTING.md](CONTRIBUTING.md) — sobre todo la
+sección de invariantes: son las reglas que no se pueden romper sin consecuencias
+para alguien real. Los fallos de seguridad van por [SECURITY.md](SECURITY.md), no
+por un issue público.
+
 ---
 
 ## Cifras del evento

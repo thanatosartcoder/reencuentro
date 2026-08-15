@@ -1,0 +1,111 @@
+name: CI
+
+# Sin esto la protección de rama es un gesto: exigir que "las comprobaciones
+# pasen" no significa nada si no hay comprobaciones. Este flujo es lo que
+# convierte la revisión en algo verificable.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Un push nuevo cancela la ejecución anterior de la misma rama: no tiene
+  # sentido gastar minutos validando un commit que ya quedó atrás.
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API · tipos y pruebas
+    runs-on: ubuntu-latest
+
+    services:
+      # Las pruebas del motor de coincidencias no tocan la base, pero las
+      # migraciones sí, y son parte de lo que puede romperse.
+      postgres:
+        image: postgis/postgis:16-3.5
+        env:
+          POSTGRES_USER: reencuentro
+          POSTGRES_PASSWORD: reencuentro
+          POSTGRES_DB: reencuentro
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U reencuentro"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Instalar
+        working-directory: apps/api
+        run: npm ci
+
+      - name: Comprobar tipos
+        working-directory: apps/api
+        run: npm run typecheck
+
+      - name: Pruebas
+        working-directory: apps/api
+        run: npm test
+
+      - name: Migraciones
+        working-directory: apps/api
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5433
+          DB_USER: reencuentro
+          DB_PASSWORD: reencuentro
+          DB_NAME: reencuentro
+          # Clave de pruebas: válida en formato, sin ningún dato real detrás.
+          FIELD_ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000001
+        run: npm run migration:run
+
+  web:
+    name: Web · tipos y compilación
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Instalar
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Comprobar tipos
+        working-directory: apps/web
+        run: npm run typecheck
+
+      - name: Compilar
+        working-directory: apps/web
+        run: npm run build
+
+  imagen:
+    name: Imagen de producción
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Se construye pero no se publica. Es lo que habría atrapado antes el
+      # fallo de dependencias que solo apareció al ejecutar el contenedor:
+      # tres librerías de la ingesta estaban en devDependencies y la imagen
+      # final moría con "Cannot find module".
+      - name: Construir
+        working-directory: apps/api
+        run: docker build -t reencuentro-api:ci .

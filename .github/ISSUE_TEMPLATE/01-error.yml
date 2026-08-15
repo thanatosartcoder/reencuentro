@@ -1,0 +1,61 @@
+name: Error
+description: Algo no funciona como debería
+labels: ['error']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Si el fallo expone datos personales o es un problema de seguridad,
+        **no lo reportes aquí**. Lee [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué pasa
+      description: Qué esperabas que ocurriera y qué ocurrió en su lugar.
+      placeholder: |
+        Esperaba que al reportar sin señal el reporte quedara en la cola.
+        En su lugar el botón se queda girando y al recargar no hay nada.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      description: Los pasos mínimos. Si no es reproducible siempre, dilo.
+      placeholder: |
+        1. Activar modo avión
+        2. Ir a /desaparecidos/nuevo
+        3. Llenar nombre y teléfono
+        4. Pulsar "Registrar el reporte"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gravedad
+    attributes:
+      label: Qué tan grave es
+      description: Pensando en la consecuencia real, no en lo molesto que resulte.
+      options:
+        - Expone datos personales o da información falsa a una familia
+        - Impide registrar o encontrar a una persona
+        - El mapa muestra información incorrecta sobre el terreno
+        - Molesto pero hay forma de continuar
+        - Cosmético
+    validations:
+      required: true
+
+  - type: input
+    id: donde
+    attributes:
+      label: Dónde
+      description: Navegador y dispositivo, o el endpoint si es de la API.
+      placeholder: Chrome en Android 11, gama baja / o POST /api/sync/push
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errores en consola o logs
+      description: Pega lo que veas. **Quita cualquier dato personal antes.**
+      render: text

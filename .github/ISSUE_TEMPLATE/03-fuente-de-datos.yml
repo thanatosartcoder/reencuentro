@@ -1,0 +1,79 @@
+name: Fuente de datos
+description: Conoces un origen oficial o abierto que la plataforma debería usar
+labels: ['fuente-de-datos']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Estos issues son especialmente bienvenidos. Buena parte del valor de la
+        plataforma está en cruzar fuentes, y hoy hay huecos grandes: solo Cali y
+        Pereira tienen evaluación de daño publicada, y **el Chocó del epicentro
+        no tiene ninguna**.
+
+  - type: input
+    id: quien
+    attributes:
+      label: Quién la publica
+      placeholder: UNGRD, Invías, IDEAM, Cruz Roja, HDX, una universidad…
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: Dónde está
+      description: Enlace al portal, al dataset o a la documentación de la API.
+    validations:
+      required: true
+
+  - type: textarea
+    id: que-aporta
+    attributes:
+      label: Qué aporta que no tengamos
+      placeholder: |
+        Estado de vías del Chocó actualizado a diario. Hoy solo tenemos los
+        reportes de la comunidad y el export de OSM, que dice qué vías existen
+        pero no cuáles están transitables.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: forma
+    attributes:
+      label: En qué forma se publica
+      options:
+        - API en vivo
+        - Descarga de archivo que se actualiza
+        - Publicación por lotes (mensual, semanal)
+        - Solo una página web, sin datos estructurados
+        - No lo sé
+    validations:
+      required: true
+
+  - type: input
+    id: actualizacion
+    attributes:
+      label: Cada cuánto se actualiza
+      description: |
+        Es lo que decide si sirve. Un catálogo que llega hasta 2022 puede valer
+        como referencia histórica, pero no para una emergencia en curso.
+      placeholder: A diario / mensual / última actualización en 2022
+
+  - type: input
+    id: licencia
+    attributes:
+      label: Licencia o condiciones de uso
+      description: Si obliga a atribuir, hay que decirlo. Ejemplo, ODbL para OpenStreetMap.
+
+  - type: checkboxes
+    id: comprobado
+    attributes:
+      label: Comprobación
+      options:
+        - label: Verifiqué que la fuente responde y tiene datos de esta emergencia
+        - label: Sé que está desactualizada, pero creo que vale igual (explico abajo)
+
+  - type: textarea
+    id: notas
+    attributes:
+      label: Algo más

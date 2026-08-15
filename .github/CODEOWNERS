@@ -1,0 +1,17 @@
+# Toda contribución pasa por revisión del mantenedor.
+# Combinado con la protección de rama, esto hace que ningún PR entre a main
+# sin aprobación explícita.
+
+* @thanatosartcoder
+
+# Las rutas que tocan datos personales o la decisión de notificar a una familia
+# se listan aparte a propósito: no cambian la regla, pero dejan constancia de
+# qué partes del código exigen leer CONTRIBUTING.md antes de tocarlas.
+
+/apps/api/src/modules/persons/matching/   @thanatosartcoder
+/apps/api/src/modules/persons/persons.presenter.ts   @thanatosartcoder
+/apps/api/src/modules/export/             @thanatosartcoder
+/apps/api/src/modules/auth/               @thanatosartcoder
+/apps/api/src/common/crypto/              @thanatosartcoder
+/apps/api/src/database/migrations/        @thanatosartcoder
+/.github/                                 @thanatosartcoder
