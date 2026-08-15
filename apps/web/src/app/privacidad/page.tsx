@@ -16,18 +16,21 @@ import Link from 'next/link';
  * documenta no significa nada.
  */
 
-// ---------------------------------------------------------------------------
-// PENDIENTE DE COMPLETAR antes de anunciar la plataforma.
-//
-// La ley exige identificar al responsable con nombre, domicilio y un canal de
-// atención. Sin esto, quien entrega los datos de su hija no tiene a quién
-// reclamarle, y esa es justamente la garantía que la norma protege.
-// ---------------------------------------------------------------------------
+/**
+ * Responsable del tratamiento.
+ *
+ * La ley exige identificarlo con nombre, domicilio de notificación y un canal
+ * de atención (artículo 13 del Decreto 1377). Sin esto, quien entrega los datos
+ * de su hija no tiene a quién reclamarle, y esa es justamente la garantía que
+ * la norma protege.
+ *
+ * Si esto pasa alguna vez a manos de una fundación o una entidad, cámbialo aquí
+ * y en ningún sitio más: es el único punto del código donde vive.
+ */
 const RESPONSABLE = {
   nombre: 'Roibert David Peñaloza Valencia',
   correo: 'roibert@suitedynamics.io',
-  /** Ciudad y dirección de notificación. Requisito del artículo 13 del Decreto 1377. */
-  domicilio: 'Barranquilla, Colombia',
+  domicilio: 'Cra 53 #84-56, Barranquilla, Colombia',
 };
 
 const ACTUALIZADA = '15 de agosto de 2026';
