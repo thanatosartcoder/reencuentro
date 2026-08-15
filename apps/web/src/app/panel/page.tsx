@@ -5,8 +5,10 @@ import { api, ApiError, type PhotoRef } from '@/lib/api';
 import { Field, Notice, SubmitButton, TextInput } from '@/components/Form';
 import { timeAgo } from '@/components/DecayMeter';
 import { Photo, PhotoPlaceholder } from '@/components/Photo';
+import { ChangePassword } from '@/components/ChangePassword';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
+const MUST_CHANGE_KEY = 'reencuentro.mustChangePassword';
 
 interface Candidate {
   id: string;
@@ -72,21 +74,65 @@ interface PersonSide {
 
 export default function PanelPage() {
   const [token, setToken] = useState<string | null>(null);
+  const [mustChange, setMustChange] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   useEffect(() => {
     setToken(localStorage.getItem(TOKEN_KEY));
+    setMustChange(localStorage.getItem(MUST_CHANGE_KEY) === 'true');
   }, []);
 
-  if (token === null) return <Login onLogin={setToken} />;
-  return <Queue token={token} onLogout={() => {
+  const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(MUST_CHANGE_KEY);
     setToken(null);
-  }} />;
+    setMustChange(false);
+    setChanging(false);
+  };
+
+  const onPasswordChanged = (newToken: string) => {
+    localStorage.setItem(TOKEN_KEY, newToken);
+    localStorage.removeItem(MUST_CHANGE_KEY);
+    setToken(newToken);
+    setMustChange(false);
+    setChanging(false);
+  };
+
+  if (token === null) {
+    return (
+      <Login
+        onLogin={(newToken, needsChange) => {
+          setToken(newToken);
+          setMustChange(needsChange);
+          if (needsChange) localStorage.setItem(MUST_CHANGE_KEY, 'true');
+        }}
+      />
+    );
+  }
+
+  // El cambio obligatorio no es una sugerencia: el servidor rechaza cualquier
+  // otra petición hasta que se haga, así que la pantalla tampoco ofrece salida.
+  if (mustChange || changing) {
+    return (
+      <ChangePassword
+        token={token}
+        forced={mustChange}
+        onDone={onPasswordChanged}
+        onCancel={mustChange ? undefined : () => setChanging(false)}
+      />
+    );
+  }
+
+  return <Queue token={token} onLogout={logout} onChangePassword={() => setChanging(true)} />;
 }
 
 // ---------------------------------------------------------------------------
 
-function Login({ onLogin }: { onLogin: (token: string) => void }) {
+function Login({
+  onLogin,
+}: {
+  onLogin: (token: string, mustChangePassword: boolean) => void;
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -97,12 +143,12 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
     setBusy(true);
     setError(null);
     try {
-      const response = await api.post<{ accessToken: string }>('/auth/login', {
-        email,
-        password,
-      });
+      const response = await api.post<{ accessToken: string; mustChangePassword: boolean }>(
+        '/auth/login',
+        { email, password },
+      );
       localStorage.setItem(TOKEN_KEY, response.accessToken);
-      onLogin(response.accessToken);
+      onLogin(response.accessToken, Boolean(response.mustChangePassword));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No se pudo iniciar sesión.');
     } finally {
@@ -159,7 +205,15 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
 
 // ---------------------------------------------------------------------------
 
-function Queue({ token, onLogout }: { token: string; onLogout: () => void }) {
+function Queue({
+  token,
+  onLogout,
+  onChangePassword,
+}: {
+  token: string;
+  onLogout: () => void;
+  onChangePassword: () => void;
+}) {
   const [items, setItems] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -198,9 +252,18 @@ function Queue({ token, onLogout }: { token: string; onLogout: () => void }) {
             Coincidencias por verificar
           </h1>
         </div>
-        <button type="button" onClick={onLogout} className="text-[15px] underline underline-offset-4">
-          Salir
-        </button>
+        <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={onChangePassword}
+            className="text-[15px] underline underline-offset-4"
+          >
+            Cambiar contraseña
+          </button>
+          <button type="button" onClick={onLogout} className="text-[15px] underline underline-offset-4">
+            Salir
+          </button>
+        </div>
       </div>
 
       <p className="mt-3 max-w-2xl text-[16px] leading-snug text-ink-soft">

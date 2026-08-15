@@ -13,6 +13,13 @@ import { AuthService, OperatorClaims } from './auth.service';
 import { OperatorRole } from './entities/operator.entity';
 
 export const ROLES_KEY = 'roles';
+export const ALLOW_PENDING_PASSWORD_KEY = 'allowPendingPassword';
+
+/**
+ * Marca los endpoints accesibles con una sesión que aún debe cambiar la
+ * contraseña. Solo el propio cambio y la consulta de la sesión lo llevan.
+ */
+export const AllowPendingPassword = () => SetMetadata(ALLOW_PENDING_PASSWORD_KEY, true);
 
 /** Restringe un endpoint a ciertos roles del panel de validación. */
 export const Roles = (...roles: OperatorRole[]) => SetMetadata(ROLES_KEY, roles);
@@ -45,6 +52,21 @@ export class OperatorGuard implements CanActivate {
 
     const claims = await this.auth.verify(header.slice(7));
     request.operator = claims;
+
+    // Una cuenta con la contraseña de la instalación no puede ver datos de
+    // personas: esa clave está publicada en el repositorio. La sesión existe,
+    // pero solo sirve para cambiarla.
+    if (claims.mustChangePassword) {
+      const allowed = this.reflector.getAllAndOverride<boolean | undefined>(
+        ALLOW_PENDING_PASSWORD_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!allowed) {
+        throw new ForbiddenException(
+          'Debes cambiar tu contraseña antes de poder usar el panel.',
+        );
+      }
+    }
 
     const required = this.reflector.getAllAndOverride<OperatorRole[] | undefined>(ROLES_KEY, [
       context.getHandler(),

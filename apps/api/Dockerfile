@@ -29,6 +29,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
 # Node no es PID 1 apto: sin un init que reape procesos, los reinicios dejan
 # zombis y las señales de parada no llegan limpias.
@@ -39,5 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends tini \
 USER node
 
 EXPOSE 4000
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "dist/main.js"]
+# El script encadena migración y arranque dentro de un shell explícito, para
+# que no dependa de cómo la plataforma invoque el contenedor.
+ENTRYPOINT ["/usr/bin/tini", "--", "./docker-entrypoint.sh"]

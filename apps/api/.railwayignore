@@ -1,0 +1,17 @@
+# Qué NO se sube a Railway.
+#
+# La imagen se construye con el Dockerfile, que reinstala las dependencias
+# dentro del contenedor: subir node_modules serían cientos de megabytes
+# inútiles, y además con binarios compilados para macOS que no sirven en Linux.
+node_modules
+dist
+uploads
+coverage
+
+# Nunca los secretos locales.
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store

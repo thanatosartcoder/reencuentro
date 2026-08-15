@@ -33,8 +33,11 @@ async function bootstrap(): Promise<void> {
   app.useBodyParser('json', { limit: '5mb' });
 
   const port = config.get<number>('port') ?? 4000;
-  await app.listen(port);
-  logger.log(`API escuchando en http://localhost:${port}/api`);
+  // Se enlaza explícitamente a todas las interfaces. Dentro de un contenedor,
+  // escuchar solo en localhost hace que el healthcheck de la plataforma no
+  // alcance nunca al proceso, y el síntoma es idéntico al de una app caída.
+  await app.listen(port, '0.0.0.0');
+  logger.log(`API escuchando en el puerto ${port} (prefijo /api)`);
 }
 
 void bootstrap();

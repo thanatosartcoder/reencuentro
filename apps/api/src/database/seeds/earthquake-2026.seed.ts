@@ -270,7 +270,10 @@ async function seedOperators(dataSource: DataSource): Promise<void> {
         fullName: op.fullName,
         organization: op.organization,
         role: op.role,
-        passwordHash: await bcrypt.hash(op.password, 10),
+        passwordHash: await bcrypt.hash(op.password, 12),
+        // La contraseña de estas cuentas está escrita en el repositorio: hasta
+        // que se cambie, la sesión no puede ver datos de personas.
+        mustChangePassword: true,
       }),
     );
   }

@@ -49,6 +49,28 @@ export class Operator {
   @Column({ type: 'timestamptz', nullable: true })
   lastLoginAt: Date | null;
 
+  /**
+   * Cuándo se cambió la contraseña por última vez.
+   *
+   * Sirve para dos cosas: avisar en el panel a quien sigue con la clave que
+   * vino en la instalación, y para invalidar sesiones. Un token emitido antes
+   * de este momento deja de valer, así que cambiar la contraseña expulsa de
+   * verdad a quien la tuviera — que es justo lo que se espera al cambiarla
+   * porque se sospecha que alguien más la conoce.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordChangedAt: Date | null;
+
+  /**
+   * Obliga a cambiar la contraseña antes de poder trabajar.
+   *
+   * Las cuentas del seed nacen con esto activo: su contraseña está escrita en
+   * el repositorio, así que hasta que se cambie no deberían poder ver datos de
+   * personas.
+   */
+  @Column({ type: 'boolean', default: false })
+  mustChangePassword: boolean;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
