@@ -49,6 +49,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
+  // Analítica: se deja pasar sin tocar la caché.
+  //
+  // El espacio que guarda este service worker es lo que le queda a alguien
+  // cuando se le cae la señal, y tiene que alcanzar para reportar a una persona
+  // desaparecida. La telemetría no compite por ese espacio, y un script de
+  // medición servido desde una caché vieja no mide nada útil.
+  if (url.pathname.startsWith('/_vercel/')) return;
+
   // Teselas del mapa: cache-first y de larga vida. La geografía no cambia, y
   // sin esto el mapa queda en blanco justo donde no hay señal.
   if (url.hostname.includes('openfreemap') || url.pathname.includes('/tiles/')) {

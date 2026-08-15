@@ -3,6 +3,7 @@ import Link from 'next/link';
 import './globals.css';
 import { SyncBar } from '@/components/SyncBar';
 import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar';
+import { Analytics } from '@/components/Analytics';
 
 export const metadata: Metadata = {
   title: 'Reencuentro · Sismo Colombia 2026',
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es-CO">
       <body>
         <ServiceWorkerRegistrar />
+        <Analytics />
 
         <a
           href="#contenido"

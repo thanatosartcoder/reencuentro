@@ -106,6 +106,19 @@ En el código esto significa:
 
 El alfabeto del código omite `0/O`, `1/I/L`, `5/S` y `8/B`. Esto se dicta por teléfono con mala señal, y un código que hay que repetir tres veces termina mandándose por escrito — deshaciendo justo lo que la partición conseguía.
 
+### 11 · La medición no lleva identificadores
+
+Hay analítica de visitas, y las URLs se **reconstruyen desde cero** antes de salir del navegador (`components/Analytics.tsx`): se toman el origen y la ruta con los UUID redactados, y nada más.
+
+Dos rutas explican por qué:
+
+- `/invitacion?token=…` lleva **media credencial viva** durante siete días.
+- `/desaparecidos/<uuid>` identifica a **una persona concreta**. Qué fichas se consultan y cuándo es un dato sobre ella y sobre quien la busca, no una métrica de tráfico.
+
+Un saneador que *borra* la query puede fallar y dejar pasar algo; uno que solo copia lo que nombra explícitamente no tiene por dónde filtrar. Si añades cualquier medición, sigue esa forma.
+
+El service worker tampoco cachea `/_vercel/`: el espacio offline es lo que le queda a alguien sin señal para reportar a una persona, y la telemetría no compite por él.
+
 ---
 
 ## Cómo trabajamos
