@@ -26,6 +26,13 @@ export const configuration = () => ({
     logging: bool(process.env.DB_LOGGING, false),
   },
 
+  monitor: {
+    // Sin llave, el endpoint de estado operativo no existe. Lo que responde es
+    // un mapa de dónde duele: si las copias fallan, quien lo sepa sabe que un
+    // borrado sería irreversible.
+    key: process.env.MONITOR_KEY ?? '',
+  },
+
   backup: {
     // La copia se puede apagar en un despliegue de desarrollo, donde subir
     // volcados a almacenamiento de objetos no aporta nada y cuesta.

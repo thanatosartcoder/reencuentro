@@ -1,0 +1,138 @@
+name: Vigilancia de producción
+
+# Comprueba que la plataforma esté en pie y avisa abriendo un issue, que GitHub
+# reenvía por correo.
+#
+# Se hace aquí y no con un servicio externo para que quien mantenga esto no
+# dependa de una cuenta de terceros ni de que alguien recuerde la contraseña de
+# un panel que se mira una vez al año.
+#
+# Aviso honesto sobre la frecuencia: el cron de GitHub Actions no es puntual.
+# Puede retrasarse entre cinco y veinte minutos, así que esto detecta una caída
+# en decenas de minutos, no en segundos. Para una plataforma donde alguien
+# reporta a una persona desaparecida es suficiente para enterarse la misma
+# tarde, no para un objetivo de disponibilidad estricto. Si algún día hace falta
+# eso, un servicio de uptime dedicado lo hace mejor.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# Solo lo justo: leer el repositorio y escribir issues.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: vigilancia
+  cancel-in-progress: false
+
+env:
+  WEB: https://teestamosbuscando.co
+  API: https://api.teestamosbuscando.co
+
+jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: La web responde
+        id: web
+        run: |
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' -m 25 --retry 2 --retry-delay 5 "$WEB/") || CODE=000
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          [ "$CODE" = "200" ] || echo "fallo=La web respondió HTTP $CODE." >> "$GITHUB_OUTPUT"
+
+      - name: La API responde
+        id: api
+        run: |
+          BODY=$(curl -sS -m 25 --retry 2 --retry-delay 5 "$API/api/health") || BODY=''
+          echo "$BODY" | grep -q '"status":"ok"' \
+            && echo "ok=1" >> "$GITHUB_OUTPUT" \
+            || echo "fallo=La API no respondió correctamente en /api/health." >> "$GITHUB_OUTPUT"
+
+      # Copias, cola de validación y personal acreditado. Requiere la llave: lo
+      # que devuelve dice dónde duele, y eso no puede ser público.
+      - name: Estado operativo
+        id: estado
+        run: |
+          BODY=$(curl -sS -m 30 -H "x-monitor-key: ${{ secrets.MONITOR_KEY }}" \
+                   "$API/api/estado-operativo") || BODY=''
+          echo "$BODY" > estado.json
+
+          if ! python3 -c "import json;json.load(open('estado.json'))" 2>/dev/null; then
+            echo "fallo=No se pudo leer el estado operativo (¿llave incorrecta o API caída?)." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PROBLEMAS=$(python3 -c "
+          import json
+          d = json.load(open('estado.json'))
+          print(' · '.join(d.get('problemas', [])))
+          ")
+          [ -n "$PROBLEMAS" ] && echo "fallo=$PROBLEMAS" >> "$GITHUB_OUTPUT"
+          python3 -c "
+          import json
+          d = json.load(open('estado.json'))['detalle']
+          print('Copia hace', d.get('respaldoHoras'), 'h ·',
+                d.get('pendientes'), 'sin revisar ·',
+                d.get('validadores'), 'validadores')
+          "
+
+      - name: Avisar o cerrar el aviso
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fallos = [
+              `${{ toJSON(steps.web.outputs.fallo) }}`,
+              `${{ toJSON(steps.api.outputs.fallo) }}`,
+              `${{ toJSON(steps.estado.outputs.fallo) }}`,
+            ]
+              .map((f) => f.replace(/^"|"$/g, ''))
+              .filter((f) => f && f !== 'null' && f !== '');
+
+            const TITULO = 'Vigilancia: producción con problemas';
+            const { owner, repo } = context.repo;
+
+            // Un issue por incidencia, no uno por comprobación: abrir noventa y
+            // seis issues al día convierte el aviso en ruido que se silencia, y
+            // un aviso silenciado no avisa.
+            const abiertos = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'vigilancia',
+            });
+            const existente = abiertos.data.find((i) => i.title === TITULO);
+
+            const cuerpo = [
+              `Comprobado el ${new Date().toISOString()}`,
+              '',
+              ...fallos.map((f) => `- ${f}`),
+              '',
+              `[Ver la ejecución](${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId})`,
+            ].join('\n');
+
+            if (fallos.length > 0) {
+              if (existente) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: existente.number, body: cuerpo,
+                });
+                core.setFailed(`Sigue con problemas: ${fallos.join(' · ')}`);
+              } else {
+                await github.rest.issues.create({
+                  owner, repo, title: TITULO, body: cuerpo, labels: ['vigilancia'],
+                });
+                core.setFailed(`Problemas detectados: ${fallos.join(' · ')}`);
+              }
+              return;
+            }
+
+            // Se cierra solo al recuperarse. Un aviso que hay que cerrar a mano
+            // acaba quedándose abierto, y entonces deja de significar nada.
+            if (existente) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existente.number,
+                body: `Recuperado el ${new Date().toISOString()}. Todas las comprobaciones pasan.`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existente.number, state: 'closed',
+              });
+            }

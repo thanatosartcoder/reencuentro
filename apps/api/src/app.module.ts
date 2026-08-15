@@ -26,6 +26,7 @@ import { OverviewModule } from './modules/overview/overview.module';
 // Programación diaria de las ingestas de fuentes externas.
 import { IngestModule } from './modules/ingest/ingest.module';
 import { BackupModule } from './modules/backup/backup.module';
+import { MonitorModule } from './modules/monitor/monitor.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -75,6 +76,7 @@ import { HealthController } from './health.controller';
     OverviewModule,
     IngestModule,
     BackupModule,
+    MonitorModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
