@@ -129,6 +129,22 @@ Si añades una fuente externa nueva, decide explícitamente en `backup.service.t
 
 Todo lo demás viaja: reportes, avistamientos, votos del mapa, decisiones de validación, cuentas y la bitácora de auditoría.
 
+### 13 · El índice ciego no rota con la clave de cifrado
+
+Las claves de cifrado son un llavero: cada valor lleva delante el identificador de la clave con que se cifró (`v2.<iv>.<tag>.<datos>`), así que conviven varias y rotar no obliga a reescribir la base de golpe. Ver [`docs/rotar-claves.md`](docs/rotar-claves.md).
+
+**El índice ciego usa una clave propia y estable**, y esto no es una simplificación: es una condición de corrección.
+
+`documentHash` no sirve solo para buscar. El motor de coincidencias **compara** el hash del reporte de desaparición con el del avistamiento para decidir si son la misma persona (`scoring.ts`). Si dos filas tuvieran índices derivados de claves distintas, el mismo documento produciría hashes distintos y el sistema dejaría de reconocer a alguien que sí está reportado dos veces.
+
+Eso no es un fallo de búsqueda: es una familia que no recibe el aviso.
+
+Por eso:
+
+- Rotar `FIELD_ENCRYPTION_KEYS` **nunca** debe recalcular índices ciegos. Hay una prueba que lo fija (`field-crypto.spec.ts`).
+- Cambiar `FIELD_INDEX_KEY` obliga a recalcular **todos** los índices a la vez, en ventana de mantenimiento. No hay comando hecho a propósito.
+- Si añades una columna cifrada, métela en `CIFRADAS` de `src/scripts/rotate-keys.ts`. Si no está, la rotación la ignora en silencio y el dato se pierde el día que retires la clave vieja.
+
 ---
 
 ## Cómo trabajamos
