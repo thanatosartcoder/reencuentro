@@ -37,8 +37,16 @@ export class Operator {
   @Column({ type: 'varchar', length: 200, nullable: true })
   organization: string | null;
 
-  @Column({ type: 'varchar', length: 255, select: false })
-  passwordHash: string;
+  /**
+   * Nulo mientras la invitación esté pendiente.
+   *
+   * Quien invita no elige la contraseña de nadie: envía un enlace y la persona
+   * la establece. Así el invitador nunca conoce la credencial de otro, que es
+   * lo que permite que la bitácora signifique algo — si dos personas conocen
+   * una contraseña, "quién accedió" deja de tener respuesta.
+   */
+  @Column({ type: 'varchar', length: 255, select: false, nullable: true })
+  passwordHash: string | null;
 
   @Column({ type: 'enum', enum: OperatorRole, default: OperatorRole.VALIDATOR })
   role: OperatorRole;
@@ -70,6 +78,40 @@ export class Operator {
    */
   @Column({ type: 'boolean', default: false })
   mustChangePassword: boolean;
+
+  // --- Invitación ---
+
+  /** Hash del token de invitación. En claro solo viaja una vez, en el enlace. */
+  @Index()
+  @Column({ type: 'char', length: 64, nullable: true, select: false })
+  invitationTokenHash: string | null;
+
+  /**
+   * Vencimiento del enlace. Una invitación que no caduca es una credencial
+   * abandonada en el historial de un chat.
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  invitationExpiresAt: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  invitedById: string | null;
+
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  invitedByName: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  invitedAt: Date | null;
+
+  /**
+   * Hash del código de verificación que viaja por un canal distinto al enlace.
+   * Sin él, quien reenvíe el enlace entrega una cuenta de validador completa.
+   */
+  @Column({ type: 'char', length: 64, nullable: true, select: false })
+  invitationCodeHash: string | null;
+
+  /** Intentos fallidos del código. Al llegar al tope, la invitación muere. */
+  @Column({ type: 'int', default: 0 })
+  invitationAttempts: number;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
