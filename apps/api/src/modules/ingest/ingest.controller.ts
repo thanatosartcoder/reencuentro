@@ -38,33 +38,41 @@ export class IngestController {
   /**
    * Dispara una ingesta a mano.
    *
-   * Existe para el caso en que HDX publica una corrección urgente y no se puede
-   * esperar al cron de la madrugada. Descarga cientos de megabytes, así que
-   * queda restringida a coordinadores y registrada en bitácora.
+   * Existe para el caso en que una fuente publica una corrección urgente y no
+   * se puede esperar al cron de la madrugada.
+   *
+   * Responde de inmediato y sigue trabajando en segundo plano: la red vial
+   * tarda unos dos minutos y medio, y mantener la petición abierta ese tiempo
+   * la deja a merced del primer intermediario que corte por inactividad. Quien
+   * la lanzó sigue el avance consultando `GET /ingesta/estado`.
+   *
+   * Lanzar dos veces no duplica trabajo: el advisory lock hace que la segunda
+   * termine marcada como omitida.
    */
   @Post('ejecutar')
-  @HttpCode(200)
+  @HttpCode(202)
   @UseGuards(OperatorGuard)
   @Roles(OperatorRole.COORDINATOR)
   async run(@Body() dto: RunIngestDto, @CurrentOperator() operator: OperatorClaims) {
-    const run = await this.ingest.run(dto.source, 'manual', { force: dto.force });
-
     await this.audit.record({
       actorId: operator.sub,
       actorName: operator.name,
       action: 'RUN_INGEST',
       entityType: 'IngestRun',
-      entityId: run.id,
-      metadata: { source: dto.source, force: dto.force ?? false, status: run.status },
+      metadata: { source: dto.source, force: dto.force ?? false },
     });
 
+    // El fallo se registra dentro del propio servicio, así que aquí basta con
+    // no dejar que una promesa rechazada tumbe el proceso.
+    void this.ingest
+      .run(dto.source, 'manual', { force: dto.force })
+      .catch(() => undefined);
+
     return {
-      id: run.id,
-      fuente: run.source,
-      estado: run.status,
-      registros: run.recordsLoaded,
-      duracionSegundos: run.durationSeconds,
-      error: run.error,
+      aceptada: true,
+      fuente: dto.source,
+      mensaje:
+        'La ingesta arrancó en segundo plano. Consulta /api/ingesta/estado para ver el avance.',
     };
   }
 }
