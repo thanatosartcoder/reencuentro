@@ -19,5 +19,7 @@
     "typecheck": "npm --prefix apps/api run typecheck && npm --prefix apps/web run typecheck",
     "env:init": "node scripts/init-env.mjs",
     "setup": "npm run env:init && npm run db:up && npm run api:install && npm run web:install && npm run api:migrate && npm run api:seed"
-  }
+  },
+  "license": "MIT",
+  "author": "Roibert David Peñaloza Valencia"
 }
