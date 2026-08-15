@@ -75,6 +75,10 @@ Usuarios del panel de validación que crea el seed:
 | `validador@reencuentro.co` | `Reencuentro2026!` | valida coincidencias |
 | `coordinador@reencuentro.co` | `Reencuentro2026!` | además modera el mapa |
 
+Esa contraseña está escrita aquí, así que el sistema **obliga a cambiarla en el
+primer ingreso**: la sesión existe pero el servidor rechaza todo salvo el propio
+cambio. Hasta hacerlo no se ve ni un dato de una persona.
+
 ---
 
 ## Cómo está armado
