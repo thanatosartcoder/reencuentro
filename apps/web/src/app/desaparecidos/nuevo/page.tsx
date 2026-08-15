@@ -436,7 +436,11 @@ export default function NuevoReportePage() {
         <p className="mt-4 text-[14px] leading-snug text-ink-faint">
           Al enviar autorizas publicar el nombre y la foto en el listado de búsqueda, para que
           alguien pueda reconocerla. Tu teléfono y el documento nunca se publican. Puedes pedir
-          que se retire el caso en cualquier momento.
+          que se retire el caso en cualquier momento.{' '}
+          <Link href="/privacidad" className="underline underline-offset-2">
+            Cómo se tratan estos datos
+          </Link>
+          .
         </p>
       </form>
     </div>

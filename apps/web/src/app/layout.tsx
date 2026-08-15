@@ -87,7 +87,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </p>
             <p className="mt-3 text-ink-faint">
               Los datos personales se tratan conforme a la Ley 1581 de 2012. Las fotos y los
-              datos de contacto se guardan cifrados y su consulta queda registrada.
+              datos de contacto se guardan cifrados y su consulta queda registrada.{' '}
+              <Link href="/privacidad" className="underline underline-offset-2">
+                Qué se publica y qué no
+              </Link>
+              .
             </p>
             {/* La ODbL obliga a atribuir. No es una cortesía: es la condición
                 bajo la que la comunidad humanitaria libera estos datos. */}
