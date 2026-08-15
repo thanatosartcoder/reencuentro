@@ -1,6 +1,10 @@
 'use client';
 
-import { Analytics as VercelAnalytics } from '@vercel/analytics/react';
+// La variante de Next, no la genérica de React: resuelve el **patrón** de ruta
+// (`/desaparecidos/[id]`) en vez de la ruta ya resuelta, así que el
+// identificador de una persona no llega siquiera a formar parte del evento. El
+// saneador de abajo se queda igual, como segunda barrera.
+import { Analytics as VercelAnalytics } from '@vercel/analytics/next';
 
 /**
  * Analítica de visitas, con las URLs saneadas antes de salir del navegador.
@@ -30,20 +34,24 @@ export function Analytics() {
   return (
     <VercelAnalytics
       beforeSend={(event) => {
-        let parsed: URL;
+        // `url` llega absoluta, pero se acepta también una ruta suelta: si el
+        // paquete cambiara de forma, el saneador tiene que seguir saneando en
+        // vez de dejar pasar el evento entero.
+        let origin = '';
+        let pathname = event.url;
+
         try {
-          parsed = new URL(event.url);
+          const parsed = new URL(event.url);
+          origin = parsed.origin;
+          pathname = parsed.pathname;
         } catch {
-          // Si no se puede leer la URL, no se manda el evento. Una métrica de
-          // menos no le cuesta nada a nadie.
-          return null;
+          // Ruta relativa: se corta a mano en el primer `?` o `#`.
+          pathname = event.url.split(/[?#]/)[0];
+          if (!pathname.startsWith('/')) return null;
         }
 
-        // Solo el patrón de ruta, nunca el identificador de una persona.
-        const pathname = parsed.pathname.replace(UUID, ':id');
-
         // Se construye de nuevo: ni query, ni fragmento, ni credenciales.
-        return { ...event, url: `${parsed.origin}${pathname}` };
+        return { ...event, url: `${origin}${pathname.replace(UUID, ':id')}` };
       }}
     />
   );
