@@ -113,7 +113,10 @@ async function flush(manager: EntityManager, batch: RoadFeature[]): Promise<numb
   if (!batch.length) return 0;
 
   const values: string[] = [];
-  const params: unknown[] = [];
+  // El dataset es el mismo para todas las filas del lote, así que ocupa $1 y
+  // cada tupla lo referencia. Repetirlo por fila añadiría ciento sesenta mil
+  // copias de la misma cadena sin ganar nada.
+  const params: unknown[] = [HOT_ROADS_DATASET_ID];
 
   for (const feature of batch) {
     const p = feature.properties;
@@ -144,7 +147,8 @@ async function flush(manager: EntityManager, batch: RoadFeature[]): Promise<numb
 
   await manager.query(
     `INSERT INTO road_segments
-       ("osmId", highway, name, surface, "isBridge", "isTunnel", oneway, "exportedAt", path, "lengthMeters")
+       ("osmId", highway, name, surface, "isBridge", "isTunnel", oneway, "exportedAt", path, "lengthMeters",
+        "datasetId")
      VALUES ${values.join(', ')}
      ON CONFLICT ("osmId") DO NOTHING`,
     params,

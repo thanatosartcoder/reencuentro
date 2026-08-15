@@ -27,7 +27,14 @@ import { SeismicEvent } from './entities/seismic-event.entity';
 const USGS_ENDPOINT = 'https://earthquake.usgs.gov/fdsnws/event/1/query';
 
 /** Radio alrededor del epicentro dentro del cual un sismo se cuenta como réplica. */
-const AFTERSHOCK_RADIUS_KM = 300;
+/**
+ * Radio de respaldo cuando el evento no declara el suyo.
+ *
+ * 300 km cubre la zona de réplicas de un sismo somero de magnitud 7. Es un
+ * valor razonable para empezar, no una verdad: cada emergencia debería declarar
+ * el suyo en `events.searchRadiusKm`.
+ */
+const RADIO_POR_DEFECTO_KM = 300;
 
 /** Magnitud mínima. Por debajo de 2.5 el ruido supera a la señal para uso público. */
 const MIN_MAGNITUDE = 2.5;
@@ -51,11 +58,6 @@ interface UsgsFeature {
 export class SeismicService {
   private readonly logger = new Logger(SeismicService.name);
 
-  private readonly epicenter: GeoPoint = toGeoPoint(
-    EVENT.epicenter.latitude,
-    EVENT.epicenter.longitude,
-  );
-
   constructor(
     @InjectRepository(SeismicEvent)
     private readonly repo: Repository<SeismicEvent>,
@@ -73,17 +75,24 @@ export class SeismicService {
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async sync(): Promise<{ fetched: number; created: number }> {
-    // Las réplicas pertenecen a la emergencia que se está cubriendo. La fase
-    // siguiente parametriza también el epicentro y el radio, que hoy siguen
-    // siendo los del sismo de agosto.
-    const eventId = await this.events.primaryId();
+    const evento = await this.events.primary();
+
+    // Sin epicentro no hay nada que buscar: una inundación o un deslizamiento
+    // no tienen réplicas. Se sale en silencio en vez de fallar — que la
+    // emergencia en curso no sea sísmica es normal, no un error.
+    if (!evento?.epicentro) {
+      return { fetched: 0, created: 0 };
+    }
+
+    const epicentro = toGeoPoint(evento.epicentro.latitud, evento.epicentro.longitud);
+    const ocurrioEl = new Date(evento.ocurrioEl);
 
     const params = new URLSearchParams({
       format: 'geojson',
-      starttime: EVENT.occurredAt,
-      latitude: String(EVENT.epicenter.latitude),
-      longitude: String(EVENT.epicenter.longitude),
-      maxradiuskm: String(AFTERSHOCK_RADIUS_KM),
+      starttime: ocurrioEl.toISOString(),
+      latitude: String(evento.epicentro.latitud),
+      longitude: String(evento.epicentro.longitud),
+      maxradiuskm: String(evento.radioKm ?? RADIO_POR_DEFECTO_KM),
       minmagnitude: String(MIN_MAGNITUDE),
       orderby: 'time',
     });
@@ -118,12 +127,12 @@ export class SeismicService {
       const location = toGeoPoint(latitude, longitude);
       const occurredAt = new Date(feature.properties.time);
 
-      const distanceKm = haversineMeters(this.epicenter, location) / 1000;
+      const distanceKm = haversineMeters(epicentro, location) / 1000;
 
       // El evento principal es el más antiguo de la secuencia y el de mayor
       // magnitud; se marca por su hora de origen, que es el dato firme.
       const isMainshock =
-        Math.abs(occurredAt.getTime() - new Date(EVENT.occurredAt).getTime()) < 120_000 &&
+        Math.abs(occurredAt.getTime() - ocurrioEl.getTime()) < 120_000 &&
         feature.properties.mag >= 7;
 
       const existing = await this.repo.findOne({
@@ -151,7 +160,7 @@ export class SeismicService {
         // profundidad durante las horas siguientes a cada evento.
         await this.repo.update(existing.id, values);
       } else {
-        await this.repo.save(this.repo.create({ ...values, eventId }));
+        await this.repo.save(this.repo.create({ ...values, eventId: evento.id }));
         created++;
 
         // Una réplica fuerte cambia lo que la gente necesita saber ahora mismo.

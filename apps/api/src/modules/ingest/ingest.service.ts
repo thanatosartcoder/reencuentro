@@ -7,6 +7,7 @@ import { ingestHdxDamage, DAMAGE_DATASETS } from './hdx-damage.ingester';
 import { ingestHotRoads, HOT_ROADS_DATASET_ID } from './hot-roads.ingester';
 import { fetchHdxVersion, type IngestLogger } from './hdx-client';
 import { EventsService } from 'src/modules/events/events.service';
+import { datasetsFor } from './datasets-by-event';
 
 /**
  * Programación de las ingestas de fuentes externas.
@@ -111,6 +112,14 @@ export class IngestService {
       }
 
       this.logger.log(`${source}: iniciando ingesta (${trigger})`);
+
+      // La emergencia decide qué se trae: sus datasets y a qué mapa pertenece
+      // lo que llegue.
+      const evento = await this.events.primary();
+      if (!evento) {
+        throw new Error('No hay ninguna emergencia configurada.');
+      }
+
       const ingestLogger: IngestLogger = {
         log: (message) => this.logger.log(message.trim()),
         warn: (message) => this.logger.warn(message.trim()),
@@ -130,8 +139,10 @@ export class IngestService {
               logger: ingestLogger,
               force: options.force,
               // El daño describe una emergencia concreta: sin evento no se
-              // sabría en qué mapa mostrarlo.
-              eventId: await this.events.primaryId(),
+              // sabría en qué mapa mostrarlo, y qué datasets traer depende de
+              // qué haya publicado cada organismo para ella.
+              eventId: evento.id,
+              datasets: datasetsFor(evento.slug).damage,
             }).then((r) => ({
               records: r.inserted,
               bytes: r.bytesDownloaded,

@@ -14,6 +14,8 @@ import { EventEntity, EventStatus } from './entities/event.entity';
  */
 
 export interface EventView {
+  /** Necesario para atar lo que se escribe durante el evento. */
+  id: string;
   slug: string;
   nombre: string;
   tipo: string;
@@ -105,6 +107,7 @@ function toView(row: EventEntity): EventView {
   const punto = fromGeoPoint(row.epicenter);
 
   return {
+    id: row.id,
     slug: row.slug,
     nombre: row.name,
     tipo: row.kind,

@@ -30,6 +30,17 @@ export class RoadSegment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  /**
+   * Descarga de la que salió este tramo.
+   *
+   * Las vías no pertenecen a una emergencia —la geografía es la misma para
+   * todas— pero sí a la descarga concreta que las trajo. Es lo que permite
+   * recargar un dataset regional sin borrar los otros.
+   */
+  @Index()
+  @Column({ type: 'varchar', length: 160 })
+  datasetId: string;
+
   /** Identificador del `way` en OpenStreetMap. Permite reconciliar con el origen. */
   @Index({ unique: true })
   @Column({ type: 'bigint' })

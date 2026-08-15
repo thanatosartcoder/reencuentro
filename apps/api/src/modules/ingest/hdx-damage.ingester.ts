@@ -258,18 +258,33 @@ export interface DamageIngestResult {
 
 export async function ingestHdxDamage(
   dataSource: DataSource,
-  options: { logger?: IngestLogger; force?: boolean; eventId: string },
+  options: {
+    logger?: IngestLogger;
+    force?: boolean;
+    eventId: string;
+    /** Datasets de esta emergencia. Vacío si nadie ha publicado todavía. */
+    datasets?: HdxDamageDataset[];
+  },
 ): Promise<DamageIngestResult> {
   const logger = options.logger ?? consoleLogger;
 
-  // La versión de referencia es la del dataset de Cali; los dos se publican
-  // como parte de la misma respuesta y se recargan juntos.
-  const sourceVersion = await fetchHdxVersion(DAMAGE_DATASETS[0].datasetId);
+  const datasets = options.datasets ?? DAMAGE_DATASETS;
+
+  // Sin datasets no hay nada que traer, y no es un fallo: una emergencia recién
+  // declarada no tiene evaluaciones publicadas todavía.
+  if (datasets.length === 0) {
+    logger.log('No hay datasets de daño para esta emergencia.');
+    return { inserted: 0, bytesDownloaded: 0, sourceVersion: null };
+  }
+
+  // La versión de referencia es la del primer dataset; los de una misma
+  // emergencia se publican juntos y se recargan juntos.
+  const sourceVersion = await fetchHdxVersion(datasets[0].datasetId);
 
   let inserted = 0;
   let bytesDownloaded = 0;
 
-  for (const dataset of DAMAGE_DATASETS) {
+  for (const dataset of datasets) {
     const mask = await downloadCached({
       url: dataset.maskUrl,
       fileName: dataset.maskFileName,
