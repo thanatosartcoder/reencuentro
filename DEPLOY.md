@@ -146,6 +146,22 @@ railway run npm run ingest:vias   # 161.322 tramos viales (~160 MB, tarda)
 
 **La ingesta vial pide memoria.** Procesa 134 MB por streaming, pero la transacción de 161.322 tramos necesita holgura. Con menos de 1 GB, deja `INGEST_CRON_ENABLED=false` y córrela a mano.
 
+**Rotar la contraseña de Postgres son cuatro pasos, no dos.** `POSTGRES_PASSWORD`
+solo se lee al crear la base, así que cambiar la variable no cambia nada dentro
+de Postgres. Y aunque las variables de la API sean referencias
+(`${{PostGIS.POSTGRES_PASSWORD}}`), Railway **no reinicia el servicio** al
+cambiar la fuente: el proceso sigue con el valor viejo en memoria y responde 500
+hasta que se le fuerza el reinicio.
+
+```bash
+NEW=$(openssl rand -hex 24)
+OLD=$(railway variables --service PostGIS --kv | grep '^DATABASE_URL=' | cut -d= -f2-)
+psql "$OLD" -c "ALTER USER postgres PASSWORD '$NEW';"   # 1. la base
+railway variables --service PostGIS --set "POSTGRES_PASSWORD=$NEW"  # 2. la variable
+railway redeploy --yes                                   # 3. reiniciar la API
+curl https://tu-api.up.railway.app/api/health            # 4. comprobar
+```
+
 **Migraciones al arrancar.** `railway.json` las ejecuta antes de levantar la API. Con varias réplicas eso sería una carrera; con una, es lo correcto.
 
 ---
