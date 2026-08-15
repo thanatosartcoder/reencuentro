@@ -5,6 +5,7 @@ import { DataSource, Repository } from 'typeorm';
 import { parseBbox, toGeoPoint } from 'src/common/geo/geo.util';
 import { ReporterRole } from 'src/modules/persons/persons.enums';
 import { RealtimeGateway } from 'src/modules/notifications/realtime.gateway';
+import { EventsService } from 'src/modules/events/events.service';
 import { ZoneReport } from './entities/zone-report.entity';
 import { ZoneReportVote } from './entities/zone-report-vote.entity';
 import { VoteKind, ZONE_TYPE_CONFIG, ZoneReportStatus, ZoneReportType } from './geo.enums';
@@ -79,6 +80,7 @@ export class GeoService {
     private readonly voteRepo: Repository<ZoneReportVote>,
     private readonly dataSource: DataSource,
     private readonly gateway: RealtimeGateway,
+    private readonly events: EventsService,
   ) {}
 
   // --------------------------------------------------------------------------
@@ -105,10 +107,17 @@ export class GeoService {
       throw new BadRequestException('reportedAt no puede estar en el futuro');
     }
 
+    // El reporte se atribuye a la emergencia en curso. El cliente no la manda:
+    // un dispositivo que estuvo días sin señal no sabe cuál está activa, y
+    // hacerle elegir sería una pregunta más en un formulario que se rellena a
+    // la intemperie.
+    const eventId = await this.events.primaryId();
+
     const entity = this.zoneRepo.create({
       // El id es el UUID del cliente: el dispositivo conoce la dirección
       // definitiva del reporte antes de sincronizarlo.
       id: dto.clientUuid,
+      eventId,
       clientUuid: dto.clientUuid,
       type: dto.type,
       location: toGeoPoint(dto.location.latitude, dto.location.longitude),
@@ -247,16 +256,25 @@ export class GeoService {
   // Lectura
   // --------------------------------------------------------------------------
 
-  private baseQuery() {
+  /**
+   * Base de las lecturas del mapa, acotada a una emergencia.
+   *
+   * El evento es obligatorio aquí y no opcional: una vía cortada pertenece a
+   * una catástrofe concreta, y mezclar dos daría un mapa que no describe
+   * ninguna. Que el parámetro sea requerido obliga a decidirlo en cada lectura
+   * en vez de olvidarlo.
+   */
+  private baseQuery(eventId: string) {
     return this.zoneRepo
       .createQueryBuilder('z')
       .addSelect(CONFIDENCE_SQL, 'confidence')
-      .where('z."deletedAt" IS NULL');
+      .where('z."deletedAt" IS NULL')
+      .andWhere('z."eventId" = :eventId', { eventId });
   }
 
   /** Reportes de la ventana visible del mapa. */
   async query(query: QueryZonesDto): Promise<{ items: ZoneView[]; total: number }> {
-    const qb = this.baseQuery().andWhere('z.status = :status', {
+    const qb = this.baseQuery(await this.events.primaryId()).andWhere('z.status = :status', {
       status: ZoneReportStatus.ACTIVE,
     });
 
@@ -299,7 +317,7 @@ export class GeoService {
   async nearby(query: NearbyZonesDto): Promise<{ items: ZoneView[] }> {
     const radius = query.radiusMeters ?? 5_000;
 
-    const qb = this.baseQuery()
+    const qb = this.baseQuery(await this.events.primaryId())
       .andWhere('z.status = :status', { status: ZoneReportStatus.ACTIVE })
       .andWhere(
         `ST_DWithin(z."location", ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radius)`,
@@ -322,7 +340,7 @@ export class GeoService {
   }
 
   async findById(id: string): Promise<ZoneView> {
-    const qb = this.baseQuery().andWhere('z.id = :id', { id });
+    const qb = this.baseQuery(await this.events.primaryId()).andWhere('z.id = :id', { id });
     const { entities, raw } = await qb.getRawAndEntities();
     if (!entities.length) throw new NotFoundException('Reporte de zona no encontrado');
     return toZoneView(entities[0], Number(raw[0]?.confidence ?? 0));
@@ -337,6 +355,7 @@ export class GeoService {
       .addSelect('COUNT(*)::int', 'count')
       .where('z.status = :status', { status: ZoneReportStatus.ACTIVE })
       .andWhere('z."deletedAt" IS NULL')
+      .andWhere('z."eventId" = :eventId', { eventId: await this.events.primaryId() })
       .andWhere('z.department IS NOT NULL')
       .groupBy('z.department')
       .addGroupBy('z.type')
@@ -362,6 +381,13 @@ export class GeoService {
    * Un reporte con la confianza en el suelo deja de mostrarse por el filtro,
    * pero marcarlo como vencido saca sus filas del índice parcial y mantiene
    * pequeña la consulta que pinta el mapa, que es la más caliente del sistema.
+   */
+  /**
+   * Caduca reportes de **todas** las emergencias, no solo de la activa.
+   *
+   * No se acota a propósito: una vía que se reportó cortada en una emergencia
+   * anterior tampoco debe seguir mostrándose como activa porque la atención se
+   * haya movido a otra. La caducidad es del reporte, no del evento.
    */
   @Cron(CronExpression.EVERY_30_MINUTES)
   async expireStaleReports(): Promise<void> {

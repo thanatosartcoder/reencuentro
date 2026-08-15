@@ -6,6 +6,7 @@ import { IngestRun, IngestSource, IngestStatus } from './entities/ingest-run.ent
 import { ingestHdxDamage, DAMAGE_DATASETS } from './hdx-damage.ingester';
 import { ingestHotRoads, HOT_ROADS_DATASET_ID } from './hot-roads.ingester';
 import { fetchHdxVersion, type IngestLogger } from './hdx-client';
+import { EventsService } from 'src/modules/events/events.service';
 
 /**
  * Programación de las ingestas de fuentes externas.
@@ -43,6 +44,7 @@ export class IngestService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(IngestRun) private readonly runs: Repository<IngestRun>,
+    private readonly events: EventsService,
   ) {}
 
   private get enabled(): boolean {
@@ -127,6 +129,9 @@ export class IngestService {
           : await ingestHdxDamage(this.dataSource, {
               logger: ingestLogger,
               force: options.force,
+              // El daño describe una emergencia concreta: sin evento no se
+              // sabría en qué mapa mostrarlo.
+              eventId: await this.events.primaryId(),
             }).then((r) => ({
               records: r.inserted,
               bytes: r.bytesDownloaded,

@@ -19,6 +19,17 @@ import { ZoneReportVote } from './zone-report-vote.entity';
 @Index(['status', 'type'])
 @Index(['status', 'reportedAt'])
 export class ZoneReport extends SyncableEntity {
+  /**
+   * Emergencia a la que pertenece este reporte.
+   *
+   * Obligatorio: una vía cortada no es un hecho permanente del territorio, es
+   * un hecho de una emergencia concreta. Sin saber de cuál, no se sabría en qué
+   * mapa mostrarla ni cuándo deja de importar.
+   */
+  @Index()
+  @Column({ type: 'uuid' })
+  eventId: string;
+
   @Index()
   @Column({ type: 'enum', enum: ZoneReportType })
   type: ZoneReportType;

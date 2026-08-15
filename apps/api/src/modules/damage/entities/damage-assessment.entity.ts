@@ -23,6 +23,16 @@ export class DamageAssessment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  /**
+   * Emergencia a la que pertenece este dato.
+   *
+   * Obligatorio: un dato de contexto sin emergencia no significa nada — no se
+   * sabría en qué mapa mostrarlo ni cuándo deja de ser relevante.
+   */
+  @Index()
+  @Column({ type: 'uuid' })
+  eventId: string;
+
   /** Identificador del dataset en HDX, para poder re-ingerir o retirar en bloque. */
   @Index()
   @Column({ type: 'varchar', length: 120 })

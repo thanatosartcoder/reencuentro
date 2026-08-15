@@ -111,6 +111,7 @@ async function ingestCoverage(
   manager: EntityManager,
   dataset: HdxDamageDataset,
   maskPath: string,
+  eventId: string,
 ): Promise<void> {
   const raw = JSON.parse(readFileSync(maskPath, 'utf8')) as {
     features?: { geometry: unknown }[];
@@ -122,9 +123,9 @@ async function ingestCoverage(
   await manager.query(
     `INSERT INTO damage_coverage
        ("datasetId", city, department, publisher, "imagerySource", "imageryDate",
-        "buildingsAssessed", area)
+        "buildingsAssessed", area, "eventId")
      VALUES ($1, $2, $3, $4, $5, $6, $7,
-       ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON($8), 4326))::geography)`,
+       ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON($8), 4326))::geography, $9)`,
     [
       dataset.datasetId,
       dataset.city,
@@ -134,6 +135,7 @@ async function ingestCoverage(
       dataset.imageryDate,
       dataset.buildingsAssessed,
       JSON.stringify(geometry),
+      eventId,
     ],
   );
 }
@@ -142,6 +144,7 @@ async function ingestOne(
   manager: EntityManager,
   dataset: HdxDamageDataset,
   gpkgPath: string,
+  eventId: string,
 ): Promise<number> {
   const db = new Database(gpkgPath, { readonly: true });
 
@@ -196,7 +199,10 @@ async function ingestOne(
     for (let start = 0; start < rows.length; start += BATCH_SIZE) {
       const batch = rows.slice(start, start + BATCH_SIZE);
       const values: string[] = [];
-      const params: unknown[] = [];
+      // El evento es el mismo para todas las filas del lote, así que ocupa $1 y
+      // cada tupla lo referencia. Repetirlo por fila añadiría cien mil copias
+      // del mismo uuid al arreglo de parámetros sin ganar nada.
+      const params: unknown[] = [eventId];
 
       for (const row of batch) {
         const { wkb, srsId } = extractWkb(row.geom);
@@ -208,7 +214,8 @@ async function ingestOne(
         values.push(
           `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6},
             $${base + 7}, $${base + 8}, $${base + 9}, true, $${base + 10},
-            ST_Multi(ST_Force2D(ST_Transform(ST_GeomFromWKB($${base + 11}::bytea, $${base + 12}::int), 4326)))::geography)`,
+            ST_Multi(ST_Force2D(ST_Transform(ST_GeomFromWKB($${base + 11}::bytea, $${base + 12}::int), 4326)))::geography,
+            $1)`,
         );
 
         params.push(
@@ -230,7 +237,8 @@ async function ingestOne(
       await manager.query(
         `INSERT INTO damage_assessments
            ("datasetId", publisher, "imagerySource", "footprintSource", city, department,
-            "buildingId", "imageryDate", "damageRatio", damaged, "unknownRatio", footprint)
+            "buildingId", "imageryDate", "damageRatio", damaged, "unknownRatio", footprint,
+            "eventId")
          VALUES ${values.join(', ')}`,
         params,
       );
@@ -250,7 +258,7 @@ export interface DamageIngestResult {
 
 export async function ingestHdxDamage(
   dataSource: DataSource,
-  options: { logger?: IngestLogger; force?: boolean } = {},
+  options: { logger?: IngestLogger; force?: boolean; eventId: string },
 ): Promise<DamageIngestResult> {
   const logger = options.logger ?? consoleLogger;
 
@@ -282,8 +290,8 @@ export async function ingestHdxDamage(
     // Área y edificaciones se reemplazan en la misma transacción: dejar una
     // cobertura sin su daño, o al revés, produciría un mapa que se contradice.
     const count = await dataSource.transaction(async (manager) => {
-      await ingestCoverage(manager, dataset, mask.path);
-      return ingestOne(manager, dataset, gpkg.path);
+      await ingestCoverage(manager, dataset, mask.path, options.eventId);
+      return ingestOne(manager, dataset, gpkg.path, options.eventId);
     });
 
     inserted += count;
