@@ -6,6 +6,53 @@ Los campos cifrados son el **número de documento** de la persona buscada y el *
 
 ---
 
+## Dónde vive esta clave
+
+Antes de necesitar rotarla, hay que poder encontrarla. **Dos sitios que no fallen por la misma razón.**
+
+### 1 · Gestor de contraseñas con acceso de emergencia
+
+Bitwarden lo trae en el plan gratuito; 1Password también lo tiene. La función importa más que la marca: designas un contacto de confianza que puede *solicitar* acceso, y si no respondes en los días que fijes, se lo conceden solos.
+
+Sin eso, un gestor resuelve la mitad del problema — protege de que la olvides, no de que no estés.
+
+Guárdala como **nota segura** y escribe al lado qué es:
+
+```
+FIELD_ENCRYPTION_KEY · Reencuentro (teestamosbuscando.co)
+
+Descifra el documento de las personas buscadas y el teléfono
+de quien las reporta. Sin esto, esos datos son irrecuperables:
+las copias de seguridad los guardan cifrados.
+
+Está en Railway → servicio reencuentro-api.
+Cómo rotarla: docs/rotar-claves.md en el repositorio.
+```
+
+Una cadena hexadecimal sin contexto no le sirve a quien la encuentre dentro de dos años, ni a quien la guardó.
+
+### 2 · Fuera de línea, en otro lugar físico
+
+En papel, en sobre cerrado, en un sitio distinto de donde vives o trabajas. Eso cubre lo que el gestor no: perder acceso a todas las cuentas a la vez.
+
+### Para sacarla sin que quede en ningún registro
+
+```bash
+railway variables --service reencuentro-api --kv | grep FIELD_ENCRYPTION_KEY
+```
+
+Cópiala directo al gestor y limpia el historial de la terminal. No la mandes por correo ni por chat, tampoco "a ti mismo": ahí se queda.
+
+### Qué NO protege esto
+
+**La copia de seguridad no sustituye a la clave.** El respaldo nocturno guarda el *texto cifrado*: restaurarlo sin la clave devuelve la base entera con el documento y el teléfono convertidos en basura permanente.
+
+Perder la base se arregla con la copia. Perder la clave, con nada.
+
+Y esos datos no son de quien mantiene la plataforma: son de familias que los entregaron para encontrar a alguien.
+
+---
+
 ## Antes de empezar
 
 **Guarda la clave actual en un sitio seguro.** No la borres de ningún lado hasta terminar. Si algo sale mal a mitad, es lo único que abre lo que queda sin rotar.
