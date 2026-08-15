@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { AppDataSource } from '../data-source';
 import { ingestHotRoads } from 'src/modules/ingest/hot-roads.ingester';
+import { recordIngestRun } from 'src/modules/ingest/record-run';
+import { IngestSource, IngestStatus } from 'src/modules/ingest/entities/ingest-run.entity';
 
 /**
  * Ejecuta a mano la ingesta de la red vial de HOT.
@@ -16,8 +18,19 @@ async function main(): Promise<void> {
   console.log('Ingiriendo la red vial de HOT (OpenStreetMap)…');
   await AppDataSource.initialize();
 
+  const startedAt = new Date();
   try {
     const result = await ingestHotRoads(AppDataSource, { force });
+
+    await recordIngestRun(AppDataSource, {
+      source: IngestSource.HOT_ROADS,
+      status: IngestStatus.SUCCESS,
+      trigger: 'manual',
+      sourceVersion: result.sourceVersion,
+      recordsLoaded: result.inserted,
+      bytesDownloaded: result.bytesDownloaded,
+      startedAt,
+    });
 
     console.log(
       `\nListo: ${result.inserted.toLocaleString('es-CO')} tramos cargados ` +
@@ -35,6 +48,15 @@ async function main(): Promise<void> {
         `${Number(summary.nombradas).toLocaleString('es-CO')} tramos con nombre`,
     );
     console.log('\n  Datos © colaboradores de OpenStreetMap, licencia ODbL.');
+  } catch (error) {
+    await recordIngestRun(AppDataSource, {
+      source: IngestSource.HOT_ROADS,
+      status: IngestStatus.FAILED,
+      trigger: 'manual',
+      error: error instanceof Error ? error.message : String(error),
+      startedAt,
+    }).catch(() => undefined);
+    throw error;
   } finally {
     await AppDataSource.destroy();
   }
