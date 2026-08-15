@@ -70,6 +70,10 @@ S3_ACCESS_KEY_ID=<del token de R2>
 S3_SECRET_ACCESS_KEY=<del token de R2>
 
 INGEST_CRON_ENABLED=true
+
+# Sin esto los cron corren en UTC: la ingesta vial, que bloquea su tabla unos
+# 36 segundos, caería a las 23:20 hora colombiana en vez de a las 04:20.
+TZ=America/Bogota
 ```
 
 ```bash

@@ -164,6 +164,12 @@ importa distinto si a dos kilómetros hay cinco personas sin localizar.
 | **Red vial (HOT)** | **04:20 diario** |
 | Purga de notificaciones e historial de ingestas | Diario, madrugada |
 
+Los horarios diarios se interpretan en la zona del contenedor. Los contenedores
+arrancan en UTC salvo que se declare otra, y en UTC esas tareas caerían a las
+22:20 y 23:20 hora colombiana — todavía con gente usando el mapa. Como la
+ingesta vial bloquea su tabla unos 36 segundos, el despliegue define
+`TZ=America/Bogota` para que la madrugada sea la de aquí y no la de Greenwich.
+
 El mapa colaborativo **no hace polling**: carga al abrir y se actualiza por WebSocket cuando alguien reporta o vota. La confianza decae sola porque se calcula en SQL contra `now()` en cada consulta, no en un job.
 
 Las dos ingestas externas corren de madrugada con tres salvaguardas, porque un cron desatendido que descarga cientos de megabytes se rompe de formas caras:
