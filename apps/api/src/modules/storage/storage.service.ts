@@ -107,6 +107,21 @@ export class StorageService implements OnModuleInit {
     return { key, contentHash, deduplicated: false };
   }
 
+  /**
+   * Escribe en una clave concreta.
+   *
+   * Distinto de `putContent`, que direcciona por contenido: un respaldo necesita
+   * un nombre con fecha, no un hash — se busca por cuándo se hizo, no por qué
+   * contiene.
+   */
+  put(key: string, body: Buffer, contentType: string) {
+    return this.driver.put(key, body, contentType);
+  }
+
+  list(prefix: string) {
+    return this.driver.list(prefix);
+  }
+
   getStream(key: string) {
     return this.driver.getStream(key);
   }

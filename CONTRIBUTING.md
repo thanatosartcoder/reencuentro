@@ -119,6 +119,16 @@ Un saneador que *borra* la query puede fallar y dejar pasar algo; uno que solo c
 
 El service worker tampoco cachea `/_vercel/`: el espacio offline es lo que le queda a alguien sin señal para reportar a una persona, y la telemetría no compite por él.
 
+### 12 · La copia de seguridad excluye solo lo que una ingesta puede reponer
+
+La copia nocturna omite **los datos** de `road_segments`, `damage_assessments`, `damage_coverage` y `seismic_events` porque sus cron las vuelven a traer idénticas. Son las tablas grandes —solo las vías pasan de 160.000 filas— y arrastrarlas convertiría la copia en algo tan pesado que fallaría en silencio el día que hiciera falta.
+
+Se excluyen los datos, **nunca las tablas**: el esquema viaja entero, así que restaurar deja la base lista y el primer cron la rellena.
+
+Si añades una fuente externa nueva, decide explícitamente en `backup.service.ts` si entra en esa lista. Y si alguna vez dejas de ingerir una de esas tablas, **sácala de la lista el mismo día**: a partir de ahí sus datos ya no se reponen solos, y la copia estaría omitiendo algo irreemplazable sin decirlo.
+
+Todo lo demás viaja: reportes, avistamientos, votos del mapa, decisiones de validación, cuentas y la bitácora de auditoría.
+
 ---
 
 ## Cómo trabajamos

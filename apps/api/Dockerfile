@@ -32,9 +32,22 @@ COPY --from=build /app/dist ./dist
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-# Node no es PID 1 apto: sin un init que reape procesos, los reinicios dejan
-# zombis y las señales de parada no llegan limpias.
-RUN apt-get update && apt-get install -y --no-install-recommends tini \
+# tini: Node no es PID 1 apto — sin un init que reape procesos, los reinicios
+# dejan zombis y las señales de parada no llegan limpias.
+#
+# postgresql-client-16: lo usa la copia de seguridad nocturna. Va del repositorio
+# de PostgreSQL y no del de Debian porque este trae la 15, y pg_dump se niega a
+# volcar un servidor más nuevo que él. La base corre PostGIS 16.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      tini ca-certificates curl gnupg \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+       -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
+  && apt-get purge -y curl gnupg && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Usuario sin privilegios. La imagen de node ya trae uno.

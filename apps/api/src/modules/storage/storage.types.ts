@@ -31,6 +31,15 @@ export interface StorageDriver {
   exists(key: string): Promise<boolean>;
 
   /**
+   * Objetos bajo un prefijo, del más nuevo al más viejo.
+   *
+   * Existe para la retención de respaldos: guardar copias sin poder enumerarlas
+   * es acumular coste sin poder podarlo, y borrar por nombre adivinado es
+   * borrar lo que no toca.
+   */
+  list(prefix: string): Promise<{ key: string; size: number; lastModified: Date }[]>;
+
+  /**
    * Espacio libre, si el driver puede saberlo. `null` en almacenamiento de
    * objetos, que es justamente la razón por la que conviene usarlo.
    */
