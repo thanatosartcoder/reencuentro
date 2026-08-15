@@ -122,3 +122,44 @@ export const EPICENTER_TOWN = {
   latitude: 4.8969,
   longitude: -76.2278,
 };
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Slug del evento al que pertenecen las cifras de este archivo.
+ *
+ * Es el enlace entre la fila de `events` —que guarda lo que las consultas
+ * necesitan filtrar espacialmente— y estas cifras, que se quedan en código
+ * porque vienen de la UNGRD y la Fiscalía y tienen que poder auditarse contra
+ * su fuente. En git cada corrección queda con su fecha y su origen; en una
+ * tabla se sobrescribiría sin rastro.
+ */
+export const EVENT_SLUG = 'sismo-san-jose-del-palmar-2026';
+
+export interface OfficialFigures {
+  event: typeof EVENT;
+  impact: typeof IMPACT;
+  capitals: AffectedCapital[];
+  epicenterTown: typeof EPICENTER_TOWN;
+}
+
+/**
+ * Cifras oficiales por evento.
+ *
+ * Al cubrir una emergencia nueva se añade aquí su entrada, con sus propias
+ * fuentes y su corte. Un evento sin entrada no es un error: significa que
+ * todavía no hay balance oficial publicado, y mostrar cero sería peor que
+ * mostrar "sin datos" — la ausencia de cifras no es ausencia de daño.
+ */
+export const OFFICIAL_BY_EVENT: Record<string, OfficialFigures> = {
+  [EVENT_SLUG]: {
+    event: EVENT,
+    impact: IMPACT,
+    capitals: AFFECTED_CAPITALS,
+    epicenterTown: EPICENTER_TOWN,
+  },
+};
+
+export function officialFiguresFor(slug: string): OfficialFigures | null {
+  return OFFICIAL_BY_EVENT[slug] ?? null;
+}

@@ -27,6 +27,7 @@ import { OverviewModule } from './modules/overview/overview.module';
 import { IngestModule } from './modules/ingest/ingest.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
+import { EventsModule } from './modules/events/events.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -77,6 +78,7 @@ import { HealthController } from './health.controller';
     IngestModule,
     BackupModule,
     MonitorModule,
+    EventsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
