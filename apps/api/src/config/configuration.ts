@@ -26,6 +26,12 @@ export const configuration = () => ({
     logging: bool(process.env.DB_LOGGING, false),
   },
 
+  backup: {
+    // La copia se puede apagar en un despliegue de desarrollo, donde subir
+    // volcados a almacenamiento de objetos no aporta nada y cuesta.
+    cronEnabled: bool(process.env.BACKUP_CRON_ENABLED, true),
+  },
+
   jwt: {
     secret: process.env.JWT_SECRET ?? 'dev-secret-inseguro',
     expiresIn: process.env.JWT_EXPIRES_IN ?? '12h',

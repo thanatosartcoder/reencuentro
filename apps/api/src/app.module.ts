@@ -25,6 +25,7 @@ import { RoadsModule } from './modules/roads/roads.module';
 import { OverviewModule } from './modules/overview/overview.module';
 // Programación diaria de las ingestas de fuentes externas.
 import { IngestModule } from './modules/ingest/ingest.module';
+import { BackupModule } from './modules/backup/backup.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -73,6 +74,7 @@ import { HealthController } from './health.controller';
     RoadsModule,
     OverviewModule,
     IngestModule,
+    BackupModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

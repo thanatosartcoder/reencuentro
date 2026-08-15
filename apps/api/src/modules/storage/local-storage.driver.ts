@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, rm, stat, writeFile, rename } from 'node:fs/promises';
+import { mkdir, readdir, rm, stat, writeFile, rename } from 'node:fs/promises';
 import { statfs } from 'node:fs/promises';
 import { dirname, join, normalize, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -98,5 +98,38 @@ export class LocalStorageDriver implements StorageDriver {
     } catch {
       return null;
     }
+  }
+
+  async list(prefix: string) {
+    // El prefijo puede apuntar a una carpeta o ser un fragmento de nombre; se
+    // recorre desde el directorio que lo contiene y se filtra por la clave
+    // completa, igual que hace el almacenamiento de objetos.
+    const base = prefix.endsWith('/') ? prefix : prefix.replace(/[^/]*$/, '');
+    const dir = this.pathFor(base || '.');
+
+    const objetos: { key: string; size: number; lastModified: Date }[] = [];
+
+    const walk = async (absolute: string, relative: string): Promise<void> => {
+      let entries;
+      try {
+        entries = await readdir(absolute, { withFileTypes: true });
+      } catch {
+        return; // La carpeta no existe todavía: no hay nada que listar.
+      }
+
+      for (const entry of entries) {
+        const key = relative ? `${relative}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          await walk(join(absolute, entry.name), key);
+          continue;
+        }
+        if (!key.startsWith(prefix)) continue;
+        const info = await stat(join(absolute, entry.name));
+        objetos.push({ key, size: info.size, lastModified: info.mtime });
+      }
+    };
+
+    await walk(dir, base.replace(/\/$/, ''));
+    return objetos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
   }
 }

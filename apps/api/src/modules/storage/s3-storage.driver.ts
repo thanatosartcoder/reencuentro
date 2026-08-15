@@ -2,6 +2,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -99,5 +100,35 @@ export class S3StorageDriver implements StorageDriver {
   /** El almacenamiento de objetos no tiene un límite que agotar. Ese es el punto. */
   async freeSpaceBytes(): Promise<number | null> {
     return null;
+  }
+
+  async list(prefix: string) {
+    const objetos: { key: string; size: number; lastModified: Date }[] = [];
+    let token: string | undefined;
+
+    // Se pagina hasta el final: quedarse en la primera página haría que la
+    // retención dejara de podar en cuanto hubiera más de mil copias.
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+
+      for (const o of page.Contents ?? []) {
+        if (!o.Key) continue;
+        objetos.push({
+          key: o.Key,
+          size: o.Size ?? 0,
+          lastModified: o.LastModified ?? new Date(0),
+        });
+      }
+
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+
+    return objetos.sort((a, b) => b.lastModified.getTime() - a.lastModified.getTime());
   }
 }
