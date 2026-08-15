@@ -7,11 +7,22 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { keyringInfo } from './common/crypto/field-crypto';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
+
+  // El llavero se valida aquí, antes de escuchar. Se carga de forma perezosa,
+  // así que un identificador mal escrito en FIELD_ENCRYPTION_ACTIVE no fallaría
+  // al arrancar: fallaría la primera vez que alguien intenta reportar a una
+  // persona desaparecida. Comprobarlo ahora convierte ese error en un despliegue
+  // que no sale, que es cuando todavía no le cuesta nada a nadie.
+  const llavero = keyringInfo();
+  logger.log(
+    `Cifrado de campos: claves [${llavero.ids.join(', ')}], activa ${llavero.activeId}`,
+  );
 
   app.setGlobalPrefix('api');
 
