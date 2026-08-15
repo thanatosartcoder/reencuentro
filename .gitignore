@@ -8,3 +8,6 @@ coverage/
 .env.local
 .DS_Store
 uploads/
+
+# Artefacto de compilación de TypeScript: ensucia el diff de cada PR.
+*.tsbuildinfo

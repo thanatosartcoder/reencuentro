@@ -94,6 +94,12 @@ export class AuthService {
 
     if (!operator) throw new UnauthorizedException('Sesión inválida');
 
+    if (!operator.passwordHash) {
+      throw new BadRequestException(
+        'Esta cuenta aún no tiene contraseña. Acepta la invitación primero.',
+      );
+    }
+
     const valid = await bcrypt.compare(currentPassword, operator.passwordHash);
     if (!valid) {
       throw new BadRequestException('La contraseña actual no es correcta');

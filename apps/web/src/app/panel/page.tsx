@@ -7,6 +7,7 @@ import { timeAgo } from '@/components/DecayMeter';
 import { Photo, PhotoPlaceholder } from '@/components/Photo';
 import { ChangePassword } from '@/components/ChangePassword';
 import { DataSources } from '@/components/DataSources';
+import { Operators } from '@/components/Operators';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
 const MUST_CHANGE_KEY = 'reencuentro.mustChangePassword';
@@ -200,6 +201,18 @@ function Login({
           Entrar
         </SubmitButton>
       </form>
+
+      {/*
+        Una cuenta recién invitada todavía no tiene contraseña, y el login
+        responde "credenciales inválidas" a propósito: decir "esa cuenta existe
+        pero está pendiente" convertiría esta pantalla en una forma de averiguar
+        qué correos son de personal acreditado. Este aviso da la salida sin
+        confirmar nada sobre ninguna cuenta.
+      */}
+      <p className="mt-6 text-[14px] leading-snug text-ink-faint">
+        ¿Te invitaron y aún no has entrado nunca? Usa el enlace de invitación que te
+        enviaron: ahí eliges tu contraseña.
+      </p>
     </div>
   );
 }
@@ -271,6 +284,8 @@ function Queue({
         Ninguna familia recibe un aviso hasta que alguien confirme aquí. Si tienes dudas,
         recházala: un rechazo no le llega a nadie, una confirmación equivocada sí.
       </p>
+
+      <Operators token={token} />
 
       <DataSources token={token} />
 
