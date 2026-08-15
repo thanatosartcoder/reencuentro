@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "idb": "^8.0.0",
     "maplibre-gl": "^5.0.0",
     "next": "^15.1.0",
