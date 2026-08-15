@@ -6,6 +6,8 @@ import { Operator } from './entities/operator.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { OperatorGuard } from './auth.guard';
+import { OperatorsService } from './operators.service';
+import { OperatorsController } from './operators.controller';
 
 /**
  * Global porque el guard de operadores se usa desde varios modulos y no tiene
@@ -26,8 +28,8 @@ import { OperatorGuard } from './auth.guard';
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, OperatorGuard],
-  exports: [AuthService, OperatorGuard, JwtModule],
+  controllers: [AuthController, OperatorsController],
+  providers: [AuthService, OperatorGuard, OperatorsService],
+  exports: [AuthService, OperatorGuard, OperatorsService, JwtModule],
 })
 export class AuthModule {}

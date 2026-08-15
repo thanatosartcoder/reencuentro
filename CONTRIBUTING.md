@@ -90,6 +90,22 @@ Los 379 desaparecidos del reporte oficial son casos con familias esperando respu
 - Sismos: **USGS**.
 - Daño en edificaciones: **Microsoft AI for Good Lab** vía HDX, y siempre con el aviso de que es una estimación de un modelo, no una inspección.
 
+### 10 · Nadie conoce la contraseña de otra persona
+
+Quien invita a un operador **no elige su contraseña**: emite una invitación y la persona establece la suya. Si dos personas conocen una credencial, la bitácora deja de poder responder quién consultó los datos de un menor — y esa respuesta es exactamente lo que exige la Ley 1581.
+
+La invitación va **partida en dos piezas que viajan por canales distintos**: un enlace por escrito y un código de seis caracteres dictado de viva voz. Un enlace suelto es una credencial completa: se reenvía, se filtra en una captura, queda en el historial de un grupo. Quien lo tuviera entraría a ver documentos y teléfonos de familias que están buscando a alguien.
+
+En el código esto significa:
+
+- El código se guarda **hasheado** y se compara en tiempo constante (`invitation-code.ts`).
+- Cinco fallos **anulan la invitación**, aunque después llegue el código correcto. Falla cerrado a propósito: así el coordinador se entera de que alguien estuvo probando.
+- Aceptar **consume** ambas mitades. Una invitación reutilizable es una credencial permanente.
+- Los mensajes de error **no distinguen** entre enlace desconocido y código incorrecto. Quien tenga una mitad no debe poder averiguar si la otra existe.
+- Ni el token ni el código entran en la bitácora: quedarían en claro y serían una credencial viva durante siete días.
+
+El alfabeto del código omite `0/O`, `1/I/L`, `5/S` y `8/B`. Esto se dicta por teléfono con mala señal, y un código que hay que repetir tres veces termina mandándose por escrito — deshaciendo justo lo que la partición conseguía.
+
 ---
 
 ## Cómo trabajamos
