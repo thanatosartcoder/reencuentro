@@ -8,6 +8,7 @@ import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import { StringDecoder } from 'node:string_decoder';
 import { StorageService } from 'src/modules/storage/storage.service';
+import { cifrarCopia, leerClavePublica } from './backup-crypto';
 
 /**
  * Tope del volcado ya comprimido.
@@ -127,19 +128,36 @@ export class BackupService {
       // propietario obliga a tener la versión correcta de pg_restore el día que
       // haya prisa, y ese día no es el día de descubrir que no la tienes.
       const { body, tablesIncluded } = await this.volcar(url, password, excludes);
-      const key = `${PREFIX}reencuentro-${stamp(startedAt)}.sql.gz`;
 
-      await this.storage.put(key, body, 'application/gzip');
+      // Se sella si hay clave pública. El servidor solo tiene la pública: puede
+      // escribir copias que no puede volver a leer, así que comprometerlo no
+      // entrega también el historial. La privada vive fuera y solo aparece el
+      // día que haya que restaurar.
+      const clavePublica = leerClavePublica(process.env.BACKUP_PUBLIC_KEY);
+      const cifrada = clavePublica !== null;
+      const contenido = cifrada ? cifrarCopia(body, clavePublica) : body;
+      const key = `${PREFIX}reencuentro-${stamp(startedAt)}.sql.gz${cifrada ? '.enc' : ''}`;
+
+      await this.storage.put(key, contenido, cifrada ? 'application/octet-stream' : 'application/gzip');
       await this.prune();
 
       const finishedAt = new Date();
 
+      if (!cifrada) {
+        // Un aviso por copia, no uno al arrancar: así aparece en el registro
+        // junto al archivo que quedó sin sellar, y no una sola vez hace meses.
+        this.logger.warn(
+          'La copia se subió SIN CIFRAR. Define BACKUP_PUBLIC_KEY: el volcado ' +
+            'lleva en claro nombres, circunstancias y notas médicas.',
+        );
+      }
+
       this.logger.log(
-        `Copia ${key} · ${(body.length / 1024 / 1024).toFixed(1)} MB · ` +
+        `Copia ${key} · ${(contenido.length / 1024 / 1024).toFixed(1)} MB${cifrada ? ' cifrada' : ''} · ` +
           `${tablesIncluded} tablas · ${Math.round((finishedAt.getTime() - startedAt.getTime()) / 1000)}s · ${trigger}`,
       );
 
-      return { key, bytes: body.length, startedAt, finishedAt, tablesIncluded };
+      return { key, bytes: contenido.length, startedAt, finishedAt, tablesIncluded };
     } finally {
       await this.dataSource.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
     }
