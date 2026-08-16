@@ -48,6 +48,10 @@ export const api = {
   get: <T>(path: string, init?: RequestInit) => request<T>(path, { ...init, method: 'GET' }),
   post: <T>(path: string, body: unknown, init?: RequestInit) =>
     request<T>(path, { ...init, method: 'POST', body: JSON.stringify(body) }),
+  patch: <T>(path: string, body: unknown, init?: RequestInit) =>
+    request<T>(path, { ...init, method: 'PATCH', body: JSON.stringify(body) }),
+  del: <T>(path: string, init?: RequestInit) =>
+    request<T>(path, { ...init, method: 'DELETE' }),
 };
 
 /**

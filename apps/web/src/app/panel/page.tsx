@@ -9,6 +9,7 @@ import { ChangePassword } from '@/components/ChangePassword';
 import { DataSources } from '@/components/DataSources';
 import { Operators } from '@/components/Operators';
 import { Backups } from '@/components/Backups';
+import { Events } from '@/components/Events';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
 const MUST_CHANGE_KEY = 'reencuentro.mustChangePassword';
@@ -285,6 +286,8 @@ function Queue({
         Ninguna familia recibe un aviso hasta que alguien confirme aquí. Si tienes dudas,
         recházala: un rechazo no le llega a nadie, una confirmación equivocada sí.
       </p>
+
+      <Events token={token} />
 
       <Operators token={token} />
 
