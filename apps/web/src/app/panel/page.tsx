@@ -88,7 +88,20 @@ export default function PanelPage() {
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(MUST_CHANGE_KEY);
+
+    // El service worker ya no guarda nada del panel, pero un dispositivo que
+    // venga de una versión anterior puede tener en disco la cola de validación
+    // con documentos y notas médicas. Cerrar sesión tiene que borrarlo: en un
+    // albergue el siguiente turno usa el mismo teléfono.
+    if (typeof caches !== 'undefined') {
+      void caches
+        .keys()
+        .then((keys) =>
+          Promise.all(keys.filter((k) => k.includes('data')).map((k) => caches.delete(k))),
+        )
+        .catch(() => undefined);
+    }
+
     setToken(null);
     setMustChange(false);
     setChanging(false);
