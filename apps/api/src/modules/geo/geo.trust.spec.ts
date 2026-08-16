@@ -5,6 +5,7 @@ import {
   CONFIRMATION_WEIGHT,
   DEFAULT_MIN_CONFIDENCE,
   MAX_REFUTATIONS_COUNTED,
+  SUELO_COMUNIDAD,
   REFUTATION_WEIGHT,
   confianzaBase,
   ROLE_BASE_CONFIDENCE,
@@ -89,6 +90,61 @@ describe('coste de enterrar un reporte', () => {
     // El tope de refutaciones contadas le pone suelo.
     expect(refutacionesParaOcultar(ROLE_BASE_CONFIDENCE.OFFICIAL)).toBe(Infinity);
     expect(confianza(ROLE_BASE_CONFIDENCE.OFFICIAL, 999)).toBeCloseTo(0.26, 5);
+  });
+});
+
+/**
+ * Lo que la comunidad NO puede hacer.
+ *
+ * La regla en una frase: nada anónimo puede hacer desaparecer un peligro del
+ * mapa. Se fija aquí porque es una propiedad, no un número: alguien que ajuste
+ * los pesos en el futuro puede romperla sin darse cuenta, y el síntoma sería una
+ * vía cortada que deja de verse porque un atacante pidió credenciales suficientes.
+ */
+describe('suelo de la comunidad', () => {
+  // Réplica de la fórmula SQL. Si alguien cambia una y no la otra, esto lo dice.
+  const credibilidad = (base: number, comunidad: number, acreditadas: number) => {
+    const acr = base - REFUTATION_WEIGHT * Math.min(acreditadas, MAX_REFUTATIONS_COUNTED);
+    const con = acr - REFUTATION_WEIGHT * Math.min(comunidad, MAX_REFUTATIONS_COUNTED);
+    return Math.max(0, Math.min(1, Math.max(con, Math.min(acr, SUELO_COMUNIDAD))));
+  };
+
+  it('el suelo deja exactamente una vida media de visibilidad', () => {
+    // Es la relación que se está eligiendo: el umbral se compara tras el
+    // decaimiento, así que 2× umbral = una vida media más de vida.
+    expect(SUELO_COMUNIDAD).toBe(2 * DEFAULT_MIN_CONFIDENCE);
+  });
+
+  it.each([1, 8, 100, 10_000])(
+    'con %i refutaciones de la comunidad el reporte sigue visible',
+    (n) => {
+      expect(credibilidad(ROLE_BASE_CONFIDENCE.CITIZEN, n, 0)).toBeGreaterThanOrEqual(
+        DEFAULT_MIN_CONFIDENCE,
+      );
+    },
+  );
+
+  it('un reporte acreditado tampoco se hunde por la comunidad', () => {
+    expect(credibilidad(ROLE_BASE_CONFIDENCE.OFFICIAL, 10_000, 0)).toBeGreaterThanOrEqual(
+      DEFAULT_MIN_CONFIDENCE,
+    );
+  });
+
+  it('el personal acreditado sí puede retirarlo', () => {
+    // Cuatro personas distintas con cuenta: un reporte ciudadano desaparece.
+    expect(credibilidad(ROLE_BASE_CONFIDENCE.CITIZEN, 0, 4)).toBeLessThan(DEFAULT_MIN_CONFIDENCE);
+  });
+
+  it('el suelo nunca sube lo que un operador ya hundió', () => {
+    const soloOperadores = credibilidad(ROLE_BASE_CONFIDENCE.CITIZEN, 0, 4);
+    const conComunidadTambien = credibilidad(ROLE_BASE_CONFIDENCE.CITIZEN, 8, 4);
+    expect(conComunidadTambien).toBeLessThanOrEqual(soloOperadores);
+  });
+
+  it('sin refutaciones la credibilidad no cambia', () => {
+    for (const base of Object.values(ROLE_BASE_CONFIDENCE)) {
+      expect(credibilidad(base, 0, 0)).toBeCloseTo(base, 5);
+    }
   });
 });
 
