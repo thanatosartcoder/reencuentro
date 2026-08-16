@@ -83,9 +83,16 @@ export class PersonsController {
     return { ...page, items: page.items.map(toPublicMissing) };
   }
 
+  /**
+   * Un caso concreto, sin sesión.
+   *
+   * Usa la consulta pública, que respeta el consentimiento y el borrado lógico.
+   * La consulta general los aplicaba y esta no, así que un enlace directo
+   * publicaba lo que el listado había ocultado.
+   */
   @Get('desaparecidos/:id')
   async findMissing(@Param('id', ParseUUIDPipe) id: string) {
-    return toPublicMissing(await this.persons.findMissingById(id));
+    return toPublicMissing(await this.persons.findPublicMissingById(id));
   }
 
   /** Vista completa para el panel de validación. Cada consulta queda en bitácora. */

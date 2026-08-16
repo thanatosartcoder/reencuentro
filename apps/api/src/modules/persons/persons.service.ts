@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { blindIndex } from 'src/common/crypto/field-crypto';
 import { generateClaimToken, hashToken } from 'src/common/crypto/tokens';
 import { toGeoPoint } from 'src/common/geo/geo.util';
@@ -309,9 +309,34 @@ export class PersonsService {
     return { items, total, limit, offset };
   }
 
+  /**
+   * Un reporte por id, para el panel de validacion.
+   *
+   * Ignora `consentPublicListing` a proposito: un validador tiene que poder
+   * revisar tambien los casos que la familia pidio no publicar. Lo que si
+   * respeta es el borrado logico — una fila retirada esta retirada para todos.
+   */
   async findMissingById(id: string): Promise<MissingPersonReport> {
     const report = await this.missingRepo.findOne({
-      where: { id },
+      where: { id, deletedAt: IsNull() },
+      relations: { photos: true },
+    });
+    if (!report) throw new NotFoundException('Reporte no encontrado');
+    return report;
+  }
+
+  /**
+   * El mismo reporte, pero por la puerta publica.
+   *
+   * Existe separado y no como un parametro opcional porque un booleano que hay
+   * que acordarse de pasar se olvida, y olvidarlo aqui significa publicar el
+   * caso de una familia que marco explicitamente que no queria que se publicara.
+   * `searchMissing` ya filtraba por consentimiento; consultar por id lo saltaba,
+   * de modo que el listado respetaba una decision que el enlace directo no.
+   */
+  async findPublicMissingById(id: string): Promise<MissingPersonReport> {
+    const report = await this.missingRepo.findOne({
+      where: { id, deletedAt: IsNull(), consentPublicListing: true },
       relations: { photos: true },
     });
     if (!report) throw new NotFoundException('Reporte no encontrado');
@@ -321,7 +346,7 @@ export class PersonsService {
   /** Resuelve un reporte a partir del claim token que conserva quien lo creo. */
   async findByClaimToken(claimToken: string): Promise<MissingPersonReport> {
     const report = await this.missingRepo.findOne({
-      where: { claimTokenHash: hashToken(claimToken) },
+      where: { claimTokenHash: hashToken(claimToken), deletedAt: IsNull() },
       relations: { photos: true },
     });
     if (!report) throw new UnauthorizedException('Token de seguimiento inválido');
@@ -330,7 +355,7 @@ export class PersonsService {
 
   async findSightingById(id: string): Promise<SightingReport> {
     const sighting = await this.sightingRepo.findOne({
-      where: { id },
+      where: { id, deletedAt: IsNull() },
       relations: { photos: true },
     });
     if (!sighting) throw new NotFoundException('Avistamiento no encontrado');
@@ -339,7 +364,7 @@ export class PersonsService {
 
   async listRecentSightings(limit = 25): Promise<SightingReport[]> {
     return this.sightingRepo.find({
-      where: { status: 'OPEN' },
+      where: { status: 'OPEN', deletedAt: IsNull() },
       relations: { photos: true },
       order: { seenAt: 'DESC' },
       take: limit,
