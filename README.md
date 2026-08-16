@@ -289,15 +289,26 @@ npm run api:test     # 14 pruebas del motor de coincidencias
 
 Probado de punta a punta contra la base real: reporte → avistamiento → coincidencia (0,94 con desglose legible) → validación humana → notificación a la familia; idempotencia en reintentos; lote de sincronización con un payload inválido que no tumba el resto; votación con decaimiento; búsqueda difusa tolerante a errores de tipeo (`mosqera` → *Mosquera*); control de acceso (401/403) y bloqueo de *path traversal* en `/media`; redacción de datos personales en el listado público.
 
+## Copias de seguridad
+
+Corren solas cada noche y se cifran con una clave pública: el servidor escribe
+copias que no puede volver a leer, así que comprometerlo no entrega también el
+historial. La privada vive fuera y solo aparece el día que haya que restaurar.
+
+El procedimiento completo —generar el par, comprobar que una copia se cifró, y
+sobre todo **restaurarla**— está en [DEPLOY.md](DEPLOY.md#copias-de-seguridad).
+Pruébalo antes de necesitarlo: cifrar sin un camino probado de vuelta no es
+proteger los datos, es perderlos despacio.
+
 ## Lo que falta antes de producción
 
 Nada de esto está a medias: está deliberadamente fuera del alcance de lo construido.
 
 - **Autenticación de operadores endurecida.** JWT sin refresh ni revocación, y sin segundo factor. Un panel que ve datos completos de menores desaparecidos necesita ambas cosas.
 - **Rotación de claves de cifrado.** Hoy la clave es única y sin versión. Rotarla exige re-cifrar todo.
-- **Push real.** El outbox y el reintento con backoff están; falta conectar credenciales de FCM/APNs. Sin ellas las notificaciones push se marcan como fallidas en lugar de fingir que salieron.
+- **Push real.** El outbox, el reintento con backoff y la integración con FCM HTTP v1 están; falta configurar `FCM_SERVICE_ACCOUNT`. Sin ella las notificaciones push se marcan como fallidas en lugar de fingir que salieron. APNs directo sigue pendiente.
 - **Comparación facial.** El enganche y el scoring existen; falta el proveedor. La recomendación es autoalojar (InsightFace) antes que mandar rostros de desaparecidos a un tercero.
-- **Moderación del mapa a escala.** Hay voto por dispositivo y cierre automático por refutaciones, pero no hay defensa contra un actor coordinado.
+- **Moderación del mapa a escala.** El voto exige una credencial que emite el servidor, así que inventarse identificadores ya no sirve, y un voto sin firmar no baja la confianza. Sigue sin haber defensa contra un actor coordinado con muchas IPs: firmar encarece el ataque, no lo cierra.
 - **Teselas propias.** OpenFreeMap sirve para desarrollo; en producción con volumen real hay que autoalojar las teselas de la región.
 - **App móvil.** El navegador no tiene equivalente real a WorkManager o BGTaskScheduler: la web sincroniza mientras la pestaña viva. Para reportar en Chocó con la pantalla apagada hace falta Flutter con `drift` + `connectivity_plus`, contra los mismos endpoints de sincronización.
 

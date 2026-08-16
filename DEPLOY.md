@@ -147,6 +147,74 @@ railway run npm run ingest:vias   # 161.322 tramos viales (~160 MB, tarda)
 
 ---
 
+## Copias de seguridad
+
+Railway ofrece recuperación a un punto en el tiempo, pero solo sobre su imagen
+oficial de Postgres; esta base corre PostGIS de la comunidad, así que no está
+disponible. Sin lo de aquí abajo no habría copia ninguna.
+
+Corre sola cada noche a las 02:40 y se guardan las últimas catorce. Se excluyen
+los datos de las capas externas —vías, daño, sismos— porque sus cron las vuelven
+a traer idénticas y son con diferencia lo más pesado; el esquema sí viaja entero.
+
+Se puede lanzar una a mano desde el panel: **Copias de seguridad → Hacer una
+copia ahora**. Útil antes de una migración delicada, porque tener la copia de
+anoche no consuela si el cambio se aplicó esta mañana.
+
+### Cifrado: la clave privada no vive aquí
+
+`BACKUP_PUBLIC_KEY` lleva **solo la clave pública**. El servidor escribe copias
+que no puede volver a leer, así que comprometerlo no entrega también el
+historial de lo que las familias contaron.
+
+El par se genera en la máquina de quien despliega, nunca en el servidor —si lo
+generara el servidor, la privada existiría ahí aunque fuera un momento:
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out privada.pem
+openssl rsa -in privada.pem -pubout -out publica.pem
+```
+
+El contenido de `publica.pem` va a Railway. `privada.pem` va donde guardas lo que
+no puedes perder, **con una segunda copia en otro sitio**, fuera de la carpeta
+del proyecto. Sin ella las copias son bytes inservibles: eso es el punto y
+también el riesgo.
+
+Cómo saber si está funcionando, sin descargar nada: el nombre del archivo. Si
+termina en `.sql.gz.enc` se cifró; si termina en `.sql.gz` la clave no se leyó, y
+el registro lleva un `WARN` diciéndolo.
+
+### Restaurar
+
+Esto es la mitad que se usa el peor día. **Pruébala antes de necesitarla**, y
+antes de borrar la privada de tu máquina.
+
+```bash
+npm --prefix apps/api run backup:restore -- \
+  backups/reencuentro-AAAA-MM-DD-HHMM.sql.gz.enc \
+  /ruta/a/privada.pem \
+  --remoto
+```
+
+`--remoto` la descarga del bucket usando las variables `S3_*`; sin esa opción,
+lee un archivo que ya tengas en disco. Si responde con el número de tablas, el
+circuito está cerrado. Si falla, el error distingue entre clave equivocada,
+archivo truncado y archivo alterado.
+
+Después, lo de siempre:
+
+```bash
+psql "$DATABASE_URL" < reencuentro-AAAA-MM-DD-HHMM.sql
+```
+
+Borra el `.sql` cuando termines: ese sí va en claro.
+
+> Si lo haces a menudo, un guion personal con las credenciales dentro evita
+> repetir variables. El `.gitignore` cubre `*.local.sh` para eso. No pegues su
+> contenido en ningún sitio: las credenciales del bucket son credenciales.
+
+---
+
 ## Notas que ahorran un susto
 
 **El disco de Railway es efímero.** Por eso `STORAGE_PROVIDER=s3` no es opcional en producción: con `local`, cada despliegue borra las fotos.

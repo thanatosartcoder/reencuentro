@@ -11,3 +11,22 @@ uploads/
 
 # Artefacto de compilación de TypeScript: ensucia el diff de cada PR.
 *.tsbuildinfo
+
+*.pem
+*.key
+
+# Guiones personales con credenciales pegadas dentro.
+#
+# El caso concreto: restaurar una copia de seguridad exige las credenciales del
+# bucket y la ruta de la clave privada, y meterlas en `.env` las mezcla con la
+# configuracion normal del proyecto. Un archivo aparte, ignorado, deja claro que
+# ahi hay secretos y que no sale de esta maquina.
+*.local.sh
+*.local.env
+
+# Volcados de la base. Los produce restaurar una copia de seguridad, y salen EN
+# CLARO: nombres, circunstancias, notas medicas y coordenadas. El script de
+# restauracion los deja en el directorio desde el que se ejecuta, asi que acaban
+# dentro del proyecto sin que nadie lo decida.
+*.sql
+!apps/api/src/**/*.sql
