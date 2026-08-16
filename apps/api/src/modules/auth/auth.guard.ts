@@ -68,14 +68,27 @@ export class OperatorGuard implements CanActivate {
       }
     }
 
-    const required = this.reflector.getAllAndOverride<OperatorRole[] | undefined>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    // Se recogen las dos declaraciones —la del método y la de la clase— y hay
+    // que satisfacer ambas, en lugar de dejar que la del método pise a la de la
+    // clase.
+    //
+    // Con `getAllAndOverride`, un `@Roles` puesto en un handler *ampliaba* el
+    // acceso por debajo del mínimo que fijaba su controlador, y el código
+    // resultante no lo delata: se lee como una restricción cuando en realidad
+    // es un permiso. Un decorador de seguridad solo debería poder estrechar.
+    const declared = this.reflector
+      .getAll<(OperatorRole[] | undefined)[]>(ROLES_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+      .filter((roles): roles is OperatorRole[] => Boolean(roles?.length));
 
     // ADMIN pasa siempre: en una emergencia no puede haber una acción bloqueada
     // porque nadie previó qué rol la necesitaba.
-    if (required?.length && claims.role !== OperatorRole.ADMIN && !required.includes(claims.role)) {
+    if (
+      claims.role !== OperatorRole.ADMIN &&
+      declared.some((required) => !required.includes(claims.role))
+    ) {
       throw new ForbiddenException('Tu rol no tiene permiso para esta acción');
     }
 
