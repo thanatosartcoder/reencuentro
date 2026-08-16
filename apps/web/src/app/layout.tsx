@@ -3,12 +3,13 @@ import Link from 'next/link';
 import './globals.css';
 import { SyncBar } from '@/components/SyncBar';
 import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar';
+import { EventChip } from '@/components/EventChip';
 import { Analytics } from '@/components/Analytics';
 
 export const metadata: Metadata = {
   title: 'Reencuentro · Sismo Colombia 2026',
   description:
-    'Reporta a una persona desaparecida, avisa dónde viste a alguien y consulta el mapa de vías y zonas afectadas por el sismo del 10 de agosto de 2026.',
+    'Reporta a una persona desaparecida, avisa dónde viste a alguien y consulta el mapa de vías y zonas afectadas por la emergencia en curso en Colombia.',
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg' },
 };
@@ -47,9 +48,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
             <Link href="/" className="flex items-baseline gap-2.5">
               <span className="text-[19px] font-bold tracking-tight">Reencuentro</span>
-              <span className="eyebrow" style={{ color: 'var(--color-rule)' }}>
-                Sismo 10 ago 2026
-              </span>
+              {/* La emergencia se lee del servidor: declarar otra cambia la
+                  cabecera de todo el sitio sin tocar este archivo. */}
+              <EventChip />
             </Link>
 
             <nav aria-label="Principal">

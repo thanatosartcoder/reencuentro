@@ -275,6 +275,20 @@ export interface MissingPerson {
 }
 
 export interface SituationOverview {
+  /**
+   * La emergencia en curso. Siempre presente: es la fila del evento.
+   *
+   * `evento` y `cifrasOficiales` pueden venir en null — una emergencia recién
+   * declarada todavía no tiene balance oficial publicado, y decirlo es más
+   * honesto que mostrar ceros.
+   */
+  emergencia: {
+    slug: string;
+    nombre: string;
+    tipo: string;
+    ocurrioEl: string;
+    departamentos: string[];
+  } | null;
   evento: {
     name: string;
     occurredAt: string;
@@ -282,9 +296,14 @@ export interface SituationOverview {
     depthKm: number;
     epicenter: { latitude: number; longitude: number; description: string };
     aftershocksReported: number;
-  };
-  epicentro: { name: string; department: string; latitude: number; longitude: number };
-  cifrasOficiales: {
+  } | null;
+  epicentro: {
+    name: string;
+    department: string;
+    latitude: number;
+    longitude: number;
+  } | null;
+  cifrasOficiales: ({
     asOf: string;
     source: string;
     deceased: number;
@@ -297,7 +316,7 @@ export interface SituationOverview {
     departmentsAffected: number;
     municipalitiesAffected: number;
     aviso: string;
-  };
+  }) | null;
   capitalesAfectadas: {
     name: string;
     department: string;

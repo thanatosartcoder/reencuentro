@@ -63,13 +63,23 @@ export default async function SituacionPage() {
             Emergencia activa
           </p>
 
+          {/* El título sale de la emergencia declarada, no de una constante:
+              cubrir otra no debería exigir editar este archivo. */}
           <h1 className="mt-2 text-[clamp(1.9rem,7vw,3.1rem)] font-bold leading-[1.05] tracking-tight">
-            Sismo M {data?.evento.magnitude ?? 7.4} · San José del Palmar, Chocó
+            {data?.emergencia?.nombre ?? 'Emergencia en curso'}
           </h1>
 
-          {data && (
+          {data?.emergencia && data.emergencia.departamentos.length > 0 && (
+            <p className="mt-2 text-[15px] leading-snug text-paper/75">
+              {data.emergencia.departamentos.join(' · ')}
+            </p>
+          )}
+
+          {/* Los parámetros sísmicos solo existen si la emergencia lo es y hay
+              boletín publicado. Una inundación no tiene magnitud. */}
+          {data?.evento && (
             <dl className="num mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-[13px] sm:grid-cols-4">
-              <Spec label="Origen" value="10 ago 2026 · 07:34" />
+              <Spec label="Magnitud" value={`M ${data.evento.magnitude}`} />
               <Spec label="Profundidad" value={`${data.evento.depthKm} km`} />
               <Spec
                 label="Epicentro"
@@ -86,7 +96,7 @@ export default async function SituacionPage() {
               Tiempo transcurrido
             </p>
             <p className="mt-1 text-[clamp(1.15rem,4.5vw,1.75rem)] font-semibold">
-              <ElapsedSince iso={data?.evento.occurredAt ?? '2026-08-10T12:34:00.000Z'} />
+              <ElapsedSince iso={data?.emergencia?.ocurrioEl ?? ''} />
             </p>
           </div>
         </div>
@@ -120,13 +130,32 @@ export default async function SituacionPage() {
       {/* Cifras oficiales, marcadas como tales y con su corte. Presentarlas
           junto a los reportes de la plataforma sin distinguirlas le daría a
           estos últimos una autoridad que no tienen. */}
-      {data && (
+      {/* Sin balance oficial publicado no se muestran ceros: se dice que
+          todavía no lo hay. Un cero se lee como "aquí no pasó nada", y en una
+          emergencia recién declarada eso es lo contrario de la verdad. */}
+      {data && !data.cifrasOficiales && (
+        <section className="mx-auto max-w-5xl px-4 pb-10">
+          <p
+            className="border-l-4 pl-3 text-[16px] leading-snug text-ink-soft"
+            style={{ borderColor: 'var(--color-naranja)' }}
+          >
+            Todavía no hay un balance oficial publicado para esta emergencia. Las cifras de
+            abajo son solo de los reportes hechos en esta plataforma.
+          </p>
+        </section>
+      )}
+
+      {data?.cifrasOficiales && (
         <section className="mx-auto max-w-5xl px-4 pb-10">
           <div className="border-2 border-ink">
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink px-4 py-3">
               <h2 className="text-[19px] font-bold tracking-tight">Cifras oficiales</h2>
               <span className="stamp text-ink-soft">
-                {data.cifrasOficiales.source} · corte 13 ago 22:30
+                {data.cifrasOficiales.source} · corte{' '}
+                {new Date(data.cifrasOficiales.asOf).toLocaleDateString('es-CO', {
+                  day: 'numeric',
+                  month: 'short',
+                })}
               </span>
             </header>
 
@@ -264,11 +293,13 @@ export default async function SituacionPage() {
 
       {/* Capitales en alerta. La banda de color es el mismo código que usa la
           señalización oficial, así que significa aquí lo que significa allá. */}
-      {data && (
+      {/* La sección entera depende del boletín oficial: sin él no hay
+          capitales que clasificar por nivel de alerta. */}
+      {data?.cifrasOficiales && data.capitalesAfectadas.length > 0 && (
         <section className="mx-auto max-w-5xl px-4 pb-10">
           <h2 className="text-[19px] font-bold tracking-tight">Ciudades en alerta</h2>
           <p className="mt-1 text-[15px] text-ink-soft">
-            Las cinco capitales en alerta roja concentran 375 de los{' '}
+            Las capitales en alerta roja concentran la mayoría de los{' '}
             {data.cifrasOficiales.missing} desaparecidos.
           </p>
 
