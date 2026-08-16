@@ -3,13 +3,29 @@ import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { gzip } from 'node:zlib';
+import { spawn } from 'node:child_process';
+import { createGzip } from 'node:zlib';
+import { pipeline } from 'node:stream/promises';
+import { StringDecoder } from 'node:string_decoder';
 import { StorageService } from 'src/modules/storage/storage.service';
 
-const run = promisify(execFile);
-const compress = promisify(gzip);
+/**
+ * Tope del volcado ya comprimido.
+ *
+ * Antes el tope se aplicaba al texto **sin comprimir** (`maxBuffer` de 256 MB) y
+ * saltaba unas diez veces antes: el volcado entero llegaba a memoria como
+ * cadena, se copiaba a un Buffer y se comprimía, o sea tres copias en el heap
+ * del mismo proceso que atiende los reportes. Ahora `pg_dump` va conectado
+ * directamente al compresor y solo se sostiene el resultado.
+ *
+ * Sigue habiendo un tope porque la copia se sube de una vez: subirla por partes
+ * exigiría carga multiparte y no vale la pena hasta que haga falta. Cuando este
+ * límite se acerque, la respuesta es esa y no subirlo.
+ */
+const MAX_COMPRESSED_BYTES = 512 * 1024 * 1024;
+
+/** Diez minutos: lo mismo que toleraba la versión anterior. */
+const DUMP_TIMEOUT_MS = 10 * 60_000;
 
 /**
  * Copia de seguridad de lo que las personas pusieron aquí.
@@ -103,37 +119,20 @@ export class BackupService {
     }
 
     try {
-      const url = this.databaseUrl();
+      const { url, password } = this.databaseUrl();
       const excludes = REGENERABLES.flatMap((t) => ['--exclude-table-data', t]);
 
       // Formato plano y comprimido aparte, no `-Fc`: un .sql.gz se puede abrir,
       // leer y restaurar con psql en cualquier máquina con Postgres. Un formato
       // propietario obliga a tener la versión correcta de pg_restore el día que
       // haya prisa, y ese día no es el día de descubrir que no la tienes.
-      const { stdout } = await run(
-        'pg_dump',
-        [
-          url,
-          '--no-owner',
-          '--no-privileges',
-          ...excludes,
-        ],
-        {
-          // Un volcado grande no puede tumbar el proceso que atiende reportes.
-          maxBuffer: 256 * 1024 * 1024,
-          timeout: 10 * 60_000,
-          env: { ...process.env, PGCONNECT_TIMEOUT: '30' },
-        },
-      );
-
-      const body = await compress(Buffer.from(stdout, 'utf8'), { level: 9 });
+      const { body, tablesIncluded } = await this.volcar(url, password, excludes);
       const key = `${PREFIX}reencuentro-${stamp(startedAt)}.sql.gz`;
 
       await this.storage.put(key, body, 'application/gzip');
       await this.prune();
 
       const finishedAt = new Date();
-      const tablesIncluded = (stdout.match(/^CREATE TABLE /gm) ?? []).length;
 
       this.logger.log(
         `Copia ${key} · ${(body.length / 1024 / 1024).toFixed(1)} MB · ` +
@@ -144,6 +143,125 @@ export class BackupService {
     } finally {
       await this.dataSource.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
     }
+  }
+
+  /**
+   * Ejecuta `pg_dump` con su salida conectada directamente al compresor.
+   *
+   * La versión anterior esperaba a tener el volcado entero en `stdout` como
+   * cadena, lo copiaba a un Buffer y luego lo comprimía: tres representaciones
+   * del mismo contenido vivas a la vez en el proceso que atiende los reportes de
+   * personas. Aquí `pg_dump` escribe, gzip consume y solo se acumula el
+   * resultado comprimido, que es un orden de magnitud menor.
+   *
+   * Se cuentan las tablas al vuelo, sobre los trozos sin comprimir, porque
+   * después ya no hay texto que buscar. El contador tolera que un `CREATE TABLE`
+   * quede partido entre dos trozos: se conserva la cola de cada uno.
+   */
+  private async volcar(
+    url: string,
+    password: string | null,
+    excludes: string[],
+  ): Promise<{ body: Buffer; tablesIncluded: number }> {
+    const child = spawn('pg_dump', [url, '--no-owner', '--no-privileges', ...excludes], {
+      env: {
+        ...process.env,
+        PGCONNECT_TIMEOUT: '30',
+        // La contraseña va por el entorno y no dentro de la URL de conexión.
+        // Los argumentos de un proceso los lee cualquiera que pueda mirar `ps`
+        // o `/proc/<pid>/cmdline` dentro del contenedor; el entorno de un
+        // proceso ajeno, no.
+        ...(password ? { PGPASSWORD: password } : {}),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    const matar = setTimeout(() => child.kill('SIGKILL'), DUMP_TIMEOUT_MS);
+
+    // stderr se recoge acotado: si `pg_dump` falla, su mensaje es lo único que
+    // explica por qué, y sin leerlo el fallo aparece como un código de salida
+    // desnudo. Sin tope, un error repetido por tabla lo llenaría todo.
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length < 8_192) stderr += chunk.toString('utf8');
+    });
+
+    let tablesIncluded = 0;
+    let body: Buffer = Buffer.alloc(0);
+
+    /**
+     * Cuenta las tablas al pasar y deja seguir los bytes intactos.
+     *
+     * Va por líneas completas y no por trozos: un trozo puede cortar en mitad de
+     * un `CREATE TABLE`, y guardar "los últimos caracteres" para el siguiente
+     * hace que un encabezado que cabía entero en esa cola se cuente dos veces.
+     * `StringDecoder` evita además romper un carácter multibyte en la frontera.
+     */
+    const contarTablas = async function* (origen: AsyncIterable<Buffer>) {
+      const decoder = new StringDecoder('utf8');
+      let resto = '';
+
+      for await (const chunk of origen) {
+        const lineas = (resto + decoder.write(chunk)).split('\n');
+        // La última puede estar incompleta; espera al siguiente trozo.
+        resto = lineas.pop() ?? '';
+        for (const linea of lineas) {
+          if (linea.startsWith('CREATE TABLE ')) tablesIncluded++;
+        }
+        yield chunk;
+      }
+
+      if ((resto + decoder.end()).startsWith('CREATE TABLE ')) tablesIncluded++;
+    };
+
+    /**
+     * Acumula la salida ya comprimida.
+     *
+     * Tiene que ser una etapa de la propia tubería y no un oyente de `data`: con
+     * `pipeline(stdout, gzip)` la promesa se resuelve al terminar el lado de
+     * escritura, antes de que el compresor emita su cierre — y el resultado es
+     * un .gz truncado que solo se descubre el día que hay que restaurarlo.
+     */
+    const acumular = async (origen: AsyncIterable<Buffer>): Promise<void> => {
+      const partes: Buffer[] = [];
+      let bytes = 0;
+
+      for await (const chunk of origen) {
+        bytes += chunk.length;
+        if (bytes > MAX_COMPRESSED_BYTES) {
+          child.kill('SIGKILL');
+          throw new Error(
+            `La copia supera ${Math.round(MAX_COMPRESSED_BYTES / 1024 ** 2)} MB comprimidos. ` +
+              'Hay que subirla por partes en lugar de de una vez.',
+          );
+        }
+        partes.push(chunk);
+      }
+
+      body = Buffer.concat(partes);
+    };
+
+    try {
+      await Promise.all([
+        pipeline(child.stdout, contarTablas, createGzip({ level: 9 }), acumular),
+        new Promise<void>((resolve, reject) => {
+          child.on('error', reject);
+          child.on('close', (code, signal) => {
+            if (code === 0) return resolve();
+            reject(
+              new Error(
+                `pg_dump terminó con ${signal ?? `código ${code}`}` +
+                  (stderr.trim() ? `: ${stderr.trim()}` : ''),
+              ),
+            );
+          });
+        }),
+      ]);
+    } finally {
+      clearTimeout(matar);
+    }
+
+    return { body, tablesIncluded };
   }
 
   /** Copias guardadas, de la más nueva a la más vieja. */
@@ -173,9 +291,11 @@ export class BackupService {
    * campos que usa TypeORM, para que la copia no dependa de configurar una
    * variable extra en desarrollo.
    */
-  private databaseUrl(): string {
+  private databaseUrl(): { url: string; password: string | null } {
+    // La contraseña sale de la URL y viaja aparte, para entregarla por
+    // `PGPASSWORD` en lugar de dejarla en los argumentos del proceso.
     const directa = process.env.DATABASE_URL;
-    if (directa) return directa;
+    if (directa) return separarContrasena(directa);
 
     const host = this.config.get<string>('database.host');
     const port = this.config.get<number>('database.port');
@@ -187,11 +307,34 @@ export class BackupService {
       throw new Error('No hay datos de conexión: pg_dump no puede arrancar.');
     }
 
-    // La contraseña se codifica: un `@` o un `/` sin escapar parten la URL y
-    // el fallo aparece como "host desconocido", que no ayuda a nadie.
-    return `postgresql://${encodeURIComponent(user ?? '')}:${encodeURIComponent(
-      pass ?? '',
-    )}@${host}:${port}/${name}`;
+    return {
+      url: `postgresql://${encodeURIComponent(user ?? '')}@${host}:${port}/${name}`,
+      password: pass ?? null,
+    };
+  }
+}
+
+/**
+ * Quita la contraseña de una URL de conexión y la devuelve aparte.
+ *
+ * La plataforma inyecta `DATABASE_URL` con la credencial dentro, y esa cadena
+ * acababa como argumento de `pg_dump` —visible en `ps` para cualquier proceso
+ * del contenedor—. Aquí se separa para pasarla por el entorno.
+ *
+ * Si la URL viene mal formada se devuelve tal cual: que la copia funcione pesa
+ * más que este endurecimiento, y `pg_dump` dará un error más útil que el que
+ * daría un parseo fallido aquí.
+ */
+function separarContrasena(raw: string): { url: string; password: string | null } {
+  try {
+    const parsed = new URL(raw);
+    if (!parsed.password) return { url: raw, password: null };
+
+    const password = decodeURIComponent(parsed.password);
+    parsed.password = '';
+    return { url: parsed.toString(), password };
+  } catch {
+    return { url: raw, password: null };
   }
 }
 
