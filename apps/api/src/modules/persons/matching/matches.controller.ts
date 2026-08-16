@@ -7,10 +7,13 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { AuditService } from 'src/modules/audit/audit.service';
 import { CurrentOperator, OperatorGuard, Roles } from 'src/modules/auth/auth.guard';
 import { OperatorClaims } from 'src/modules/auth/auth.service';
 import { OperatorRole } from 'src/modules/auth/entities/operator.entity';
@@ -27,10 +30,20 @@ class ReviewDto {
 }
 
 class QueueQueryDto {
+  /**
+   * Tamaño de página, con tope.
+   *
+   * El tope no es cosmético: cada elemento de esta cola trae el documento, las
+   * notas médicas y la coordenada exacta de las dos personas que se comparan.
+   * Sin `@Max`, una sola petición con `limit=999999` se lleva toda la base de
+   * datos de personas, y una cuenta comprometida no necesita más que eso.
+   * Cincuenta es más de lo que cabe en una pantalla de revisión.
+   */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(50)
   limit?: number;
 
   @IsOptional()
@@ -51,19 +64,60 @@ class QueueQueryDto {
  * Todo el módulo exige autenticación de operador: aquí se ven simultáneamente
  * los datos completos del desaparecido y los de quien fue encontrado, que es la
  * combinación más sensible del sistema.
+ *
+ * El rol se exige a nivel de clase y no endpoint por endpoint. Autenticar sin
+ * exigir rol dejaba entrar también a VIEWER —cuya descripción es "consultar el
+ * panel"— a la misma vista de datos personales que ve un validador, de modo que
+ * repartir cuentas de solo lectura repartía en realidad acceso completo. Lo que
+ * distingue a esta cola no es escribir: es mirar.
  */
 @Controller('matches')
 @UseGuards(OperatorGuard)
+@Roles(OperatorRole.VALIDATOR, OperatorRole.COORDINATOR)
 export class MatchesController {
-  constructor(private readonly matching: MatchingService) {}
+  constructor(
+    private readonly matching: MatchingService,
+    private readonly audit: AuditService,
+  ) {}
 
+  /**
+   * Cola pendiente. Cada consulta queda en bitácora.
+   *
+   * Consultar la cola es un acceso masivo a datos personales —decenas de
+   * documentos y notas médicas por página— y hasta ahora era el único camino
+   * hacia esos datos que no dejaba rastro, mientras que abrir un solo reporte sí
+   * lo dejaba. La Ley 1581 obliga a poder responder quién los consultó, y la
+   * respuesta no puede depender de por qué puerta entró.
+   */
   @Get('cola')
-  async queue(@Query() query: QueueQueryDto) {
+  async queue(
+    @Query() query: QueueQueryDto,
+    @CurrentOperator() operator: OperatorClaims,
+    @Req() request: Request,
+  ) {
     const { items, total } = await this.matching.listPendingQueue({
       limit: query.limit,
       offset: query.offset,
       onlyHighPriority: query.onlyHighPriority,
     });
+
+    await this.audit.record({
+      actorId: operator.sub,
+      actorName: operator.name,
+      action: 'VIEW_PII',
+      entityType: 'MatchQueue',
+      // Se registra cuántos registros salieron, no cuáles: la bitácora tiene que
+      // poder mostrar el volumen de una consulta sin convertirse ella misma en
+      // una segunda copia de los identificadores.
+      metadata: {
+        devueltos: items.length,
+        offset: query.offset ?? 0,
+        soloAltaPrioridad: query.onlyHighPriority ?? false,
+      },
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+
     return { total, items: items.map(toReviewView) };
   }
 
@@ -103,9 +157,26 @@ export class MatchesController {
     return { id: candidate.id, status: candidate.status };
   }
 
+  /** Candidatos de un reporte concreto. Devuelve PII, así que también se audita. */
   @Get('reporte/:missingId')
-  async forReport(@Param('missingId', ParseUUIDPipe) missingId: string) {
+  async forReport(
+    @Param('missingId', ParseUUIDPipe) missingId: string,
+    @CurrentOperator() operator: OperatorClaims,
+    @Req() request: Request,
+  ) {
     const items = await this.matching.listForMissingReport(missingId);
+
+    await this.audit.record({
+      actorId: operator.sub,
+      actorName: operator.name,
+      action: 'VIEW_PII',
+      entityType: 'MissingPersonReport',
+      entityId: missingId,
+      metadata: { via: 'candidatos', devueltos: items.length },
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+
     return { items: items.map(toReviewView) };
   }
 }
