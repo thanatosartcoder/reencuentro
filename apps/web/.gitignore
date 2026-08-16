@@ -1,2 +1,8 @@
 .vercel
 .env*
+
+# Lo regenera Next en cada build, y alterna entre `.next/types` y
+# `.next/dev/types` segun si lo ultimo que corrio fue `dev` o `build`. Tracked
+# ensucia el diff de cada PR con un cambio que nadie escribio, igual que pasaba
+# con los .tsbuildinfo.
+next-env.d.ts
