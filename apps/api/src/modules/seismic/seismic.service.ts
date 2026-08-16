@@ -189,12 +189,14 @@ export class SeismicService {
     minMagnitude?: number;
     sinceHours?: number;
     limit?: number;
+    /** Emergencia a consultar. Sin ella, la que esté en curso. */
+    evento?: string;
   }): Promise<SeismicView[]> {
     // Las réplicas pertenecen a su sismo: listarlas junto a las de otro daría
     // una secuencia que nunca ocurrió.
     const qb = this.repo
       .createQueryBuilder('e')
-      .where('e."eventId" = :eventId', { eventId: await this.events.primaryId() });
+      .where('e."eventId" = :eventId', { eventId: await this.events.idFor(options.evento) });
 
     if (options.minMagnitude !== undefined) {
       qb.andWhere('e.magnitude >= :minMag', { minMag: options.minMagnitude });

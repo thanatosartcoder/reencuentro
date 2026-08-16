@@ -1,6 +1,15 @@
 import { Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { SkipThrottle } from '@nestjs/throttler';
 import { OperatorGuard, Roles } from 'src/modules/auth/auth.guard';
 import { OperatorRole } from 'src/modules/auth/entities/operator.entity';
@@ -32,6 +41,12 @@ class QuerySeismicDto {
   @Min(1)
   @Max(2000)
   limit?: number;
+
+  /** Emergencia a consultar. Si no viene, la que esté en curso. */
+  @IsOptional()
+  @IsString()
+  @Length(3, 120)
+  evento?: string;
 }
 
 @Controller('sismos')

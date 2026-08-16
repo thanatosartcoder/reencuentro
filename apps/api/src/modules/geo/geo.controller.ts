@@ -55,8 +55,8 @@ export class GeoController {
   }
 
   @Get('resumen')
-  summary() {
-    return this.geo.summaryByDepartment();
+  summary(@Query('evento') evento?: string) {
+    return this.geo.summaryByDepartment(evento);
   }
 
   @Get('reportes/:id')

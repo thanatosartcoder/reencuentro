@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { PersonsService } from 'src/modules/persons/persons.service';
 import { GeoService } from 'src/modules/geo/geo.service';
 import { AFFECTED_CAPITALS, EPICENTER_TOWN, EVENT, IMPACT } from './situation.data';
@@ -22,11 +22,14 @@ export class SituationController {
    * los oficiales sin distinguirlos daría a unos la autoridad de los otros.
    */
   @Get()
-  async overview() {
-    const [evento, platform, zones] = await Promise.all([
-      this.events.primary(),
+  async overview(@Query('evento') slug?: string) {
+    // Sin parámetro, la emergencia en curso. Con él, se consulta una anterior
+    // sin cambiar cuál está activa.
+    const evento = slug ? await this.events.bySlug(slug) : await this.events.primary();
+
+    const [platform, zones] = await Promise.all([
       this.persons.getStats(),
-      this.geo.summaryByDepartment(),
+      this.geo.summaryByDepartment(slug),
     ]);
 
     // Las cifras oficiales son las de la emergencia en curso. Una recién
@@ -41,6 +44,10 @@ export class SituationController {
         tipo: evento.tipo,
         ocurrioEl: evento.ocurrioEl,
         departamentos: evento.departamentos,
+        // Con esto la web sabe si está en modo consulta: se puede mirar una
+        // emergencia anterior, pero no reportar sobre ella.
+        enCurso: evento.principal,
+        estado: evento.estado,
       },
       evento: oficiales?.event ?? null,
       epicentro: oficiales?.epicenterTown ?? null,

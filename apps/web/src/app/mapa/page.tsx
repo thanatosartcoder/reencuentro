@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import {
   api,
@@ -61,6 +62,20 @@ type Selection =
   | null;
 
 export default function MapaPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-[16px] text-ink-soft">Cargando el mapa…</div>}>
+      <Mapa />
+    </Suspense>
+  );
+}
+
+function Mapa() {
+  // La emergencia consultada viaja en la URL para que el enlace se pueda
+  // compartir. Sin parámetro, la que esté en curso.
+  const emergencia = useSearchParams().get('emergencia') ?? undefined;
+  const q = emergencia ? `&evento=${encodeURIComponent(emergencia)}` : '';
+  const soloConsulta = Boolean(emergencia);
+
   const [zones, setZones] = useState<ZoneView[]>([]);
   const [types, setTypes] = useState<ZoneType[]>([]);
   const [aftershocks, setAftershocks] = useState<SeismicView[]>([]);
@@ -87,7 +102,7 @@ export default function MapaPage() {
   const load = useCallback(async () => {
     try {
       const [zonesResponse, typesResponse] = await Promise.all([
-        api.get<{ items: ZoneView[] }>('/mapa/reportes?limit=800'),
+        api.get<{ items: ZoneView[] }>(`/mapa/reportes?limit=800${q}`),
         api.get<{ items: ZoneType[] }>('/mapa/tipos'),
       ]);
       setZones(zonesResponse.items);
@@ -113,13 +128,13 @@ export default function MapaPage() {
    */
   const loadExternal = useCallback(async () => {
     try {
-      const quakes = await api.get<{ items: SeismicView[] }>('/sismos/replicas?limit=500');
+      const quakes = await api.get<{ items: SeismicView[] }>(`/sismos/replicas?limit=500${q}`);
       setAftershocks(quakes.items);
     } catch {
       /* sin réplicas: el resto del mapa sigue en pie */
     }
     try {
-      const buildings = await api.get<{ items: DamageView[] }>('/danos?limit=2000');
+      const buildings = await api.get<{ items: DamageView[] }>(`/danos?limit=2000${q}`);
       setDamage(buildings.items);
     } catch {
       /* sin capa de daño: el resto del mapa sigue en pie */
@@ -127,7 +142,7 @@ export default function MapaPage() {
     try {
       // Dónde se ha mirado. Se carga siempre que se carga el daño: sin ella el
       // mapa no puede distinguir "sin daño" de "sin evaluar".
-      const areas = await api.get<{ items: CoverageView[] }>('/danos/cobertura');
+      const areas = await api.get<{ items: CoverageView[] }>(`/danos/cobertura${q ? '?' + q.slice(1) : ''}`);
       setCoverage(areas.items);
     } catch {
       /* sin cobertura: se advierte igual en la leyenda */
@@ -237,6 +252,7 @@ export default function MapaPage() {
           <MunicipalityDetail item={selected.item} onBack={() => setSelected(null)} />
         ) : (
           <MapPanel
+            soloConsulta={soloConsulta}
             zones={visible}
             types={types}
             activeLayers={activeLayers}
@@ -294,6 +310,8 @@ function MapPanel({
   onStartPlacing,
   onCancelPlacing,
   onCreated,
+  /** Se está mirando una emergencia que ya no está en curso. */
+  soloConsulta,
 }: {
   zones: ZoneView[];
   types: ZoneType[];
@@ -314,6 +332,8 @@ function MapPanel({
   onStartPlacing: () => void;
   onCancelPlacing: () => void;
   onCreated: () => void;
+  /** Se está consultando una emergencia que ya no está en curso. */
+  soloConsulta: boolean;
 }) {
   if (pendingMarker) {
     return (
@@ -328,13 +348,27 @@ function MapPanel({
 
   return (
     <div className="p-4">
-      <button
-        type="button"
-        onClick={placing ? onCancelPlacing : onStartPlacing}
-        className="target w-full justify-center bg-ink px-4 text-[17px] font-semibold text-paper"
-      >
-        {placing ? 'Cancelar' : 'Reportar algo en el mapa'}
-      </button>
+      {/* En modo consulta no se ofrece reportar. El servidor atribuye todo
+          reporte nuevo a la emergencia en curso, así que el botón prometería
+          algo que no ocurre: la persona cree que describe lo que está viendo y
+          el reporte acaba en otra emergencia, quizá a mil kilómetros. */}
+      {soloConsulta ? (
+        <p
+          className="border-l-4 px-3 py-2 text-[15px] leading-snug"
+          style={{ borderColor: 'var(--color-naranja)' }}
+        >
+          Estás consultando una emergencia anterior. Para reportar algo, vuelve al mapa de la
+          emergencia en curso.
+        </p>
+      ) : (
+        <button
+          type="button"
+          onClick={placing ? onCancelPlacing : onStartPlacing}
+          className="target w-full justify-center bg-ink px-4 text-[17px] font-semibold text-paper"
+        >
+          {placing ? 'Cancelar' : 'Reportar algo en el mapa'}
+        </button>
+      )}
 
       {/* La leyenda va primero: sin ella el mapa es un campo de colores que hay
           que descifrar, y descifrarlo no es lo que alguien viene a hacer aquí. */}

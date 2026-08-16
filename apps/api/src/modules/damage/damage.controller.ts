@@ -1,6 +1,15 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { DamageService } from './damage.service';
 
 class QueryDamageDto {
@@ -25,6 +34,12 @@ class QueryDamageDto {
   @Min(1)
   @Max(5000)
   limit?: number;
+
+  /** Emergencia a consultar. Si no viene, la que esté en curso. */
+  @IsOptional()
+  @IsString()
+  @Length(3, 120)
+  evento?: string;
 }
 
 @Controller('danos')
@@ -47,8 +62,8 @@ export class DamageController {
   }
 
   @Get('resumen')
-  summary() {
-    return this.damage.summary();
+  summary(@Query('evento') evento?: string) {
+    return this.damage.summary(evento);
   }
 
   /**
@@ -56,8 +71,8 @@ export class DamageController {
    * mirado, y por diferencia, dónde no.
    */
   @Get('cobertura')
-  async coverage() {
-    const items = await this.damage.coverage();
+  async coverage(@Query('evento') evento?: string) {
+    const items = await this.damage.coverage(evento);
     return {
       items,
       total: items.length,

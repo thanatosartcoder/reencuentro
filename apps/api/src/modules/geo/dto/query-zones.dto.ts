@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Length,
   Max,
   MaxLength,
   Min,
@@ -54,6 +55,19 @@ export class QueryZonesDto {
   @IsString()
   @MaxLength(30)
   sinceRevision?: string;
+
+  /**
+   * Emergencia a consultar. Si no viene, la que esté en curso.
+   *
+   * Permite mirar el mapa de una emergencia anterior sin cambiar cuál está
+   * activa. Va en la URL para que el enlace se pueda compartir: alguien que
+   * manda "mira cómo quedó Chocó" espera que el enlace siga mostrando Chocó.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(3, 120)
+  evento?: string;
+
 }
 
 export class NearbyZonesDto {
@@ -82,4 +96,10 @@ export class NearbyZonesDto {
   @Min(1)
   @Max(500)
   limit?: number;
+
+  /** Emergencia a consultar. Si no viene, la que esté en curso. */
+  @IsOptional()
+  @IsString()
+  @Length(3, 120)
+  evento?: string;
 }
