@@ -40,6 +40,8 @@ export const configuration = () => ({
   },
 
   jwt: {
+    // El valor por defecto solo sirve para desarrollo. `assertJwtSecret` en el
+    // arranque impide que un despliegue de producción llegue a usarlo.
     secret: process.env.JWT_SECRET ?? 'dev-secret-inseguro',
     expiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
   },

@@ -60,6 +60,9 @@ CORS_ORIGINS=https://tu-app.vercel.app
 
 # Genera cada uno con: openssl rand -hex 32
 FIELD_ENCRYPTION_KEY=<64 caracteres hex>
+# La API no arranca si este falta, repite el valor de ejemplo o mide menos de 32
+# caracteres. Con el secreto del repositorio, cualquiera firma un token de
+# administrador y entra al panel de validación.
 JWT_SECRET=<aleatorio largo>
 
 STORAGE_PROVIDER=s3
