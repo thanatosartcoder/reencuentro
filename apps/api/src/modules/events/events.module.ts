@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventEntity } from './entities/event.entity';
 import { EventsService } from './events.service';
 import { EventsController } from './events.controller';
+import { EventsAdminController } from './events.admin.controller';
 
 /**
  * Global: casi toda capa de contexto necesita saber a qué emergencia pertenece
@@ -11,7 +12,7 @@ import { EventsController } from './events.controller';
 @Global()
 @Module({
   imports: [TypeOrmModule.forFeature([EventEntity])],
-  controllers: [EventsController],
+  controllers: [EventsController, EventsAdminController],
   providers: [EventsService],
   exports: [EventsService],
 })
