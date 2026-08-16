@@ -1,7 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseBbox } from 'src/common/geo/geo.util';
 import { ReporterRole } from 'src/modules/persons/persons.enums';
-import { confianzaBase, ROLE_BASE_CONFIDENCE } from './geo.service';
+import {
+  CONFIRMATION_WEIGHT,
+  DEFAULT_MIN_CONFIDENCE,
+  MAX_REFUTATIONS_COUNTED,
+  REFUTATION_WEIGHT,
+  confianzaBase,
+  ROLE_BASE_CONFIDENCE,
+} from './geo.service';
 import { TrazadoValido } from './dto/create-zone-report.dto';
 
 /**
@@ -40,6 +47,48 @@ describe('confianzaBase', () => {
     expect(confianzaBase(ReporterRole.OFFICIAL, false)).toBeLessThan(
       confianzaBase(ReporterRole.OFFICIAL, true),
     );
+  });
+});
+
+/**
+ * Cuánto cuesta esconder un reporte del mapa.
+ *
+ * Se fija en una prueba porque son constantes de una línea que se ajustan sin
+ * pensar, y aquí ajustarlas cambia cuántas peticiones HTTP hacen falta para que
+ * una vía cortada deje de verse. La fórmula se replica en lugar de consultarse
+ * en SQL: si alguien cambia una y no la otra, esto lo delata.
+ */
+describe('coste de enterrar un reporte', () => {
+  const confianza = (base: number, refutaciones: number) =>
+    Math.max(
+      0,
+      Math.min(1, base - REFUTATION_WEIGHT * Math.min(refutaciones, MAX_REFUTATIONS_COUNTED)),
+    );
+
+  const refutacionesParaOcultar = (base: number) => {
+    for (let n = 1; n <= 50; n++) if (confianza(base, n) < DEFAULT_MIN_CONFIDENCE) return n;
+    return Infinity;
+  };
+
+  it('una refutación pesa menos que una confirmación', () => {
+    // Al revés era: retirar un bloqueo salía más barato que confirmarlo, y el
+    // error caro es mandar una ambulancia contra un derrumbe.
+    expect(REFUTATION_WEIGHT).toBeLessThan(CONFIRMATION_WEIGHT);
+  });
+
+  it('un reporte ciudadano aguanta más de una refutación anónima', () => {
+    // Con los pesos viejos bastaba 1 para dejarlo en el umbral y 2 para borrarlo.
+    expect(refutacionesParaOcultar(ROLE_BASE_CONFIDENCE.CITIZEN)).toBe(4);
+  });
+
+  it('un reporte de voluntario aguanta más todavía', () => {
+    expect(refutacionesParaOcultar(ROLE_BASE_CONFIDENCE.VOLUNTEER)).toBe(6);
+  });
+
+  it('un reporte acreditado no se puede ocultar por esta vía', () => {
+    // El tope de refutaciones contadas le pone suelo.
+    expect(refutacionesParaOcultar(ROLE_BASE_CONFIDENCE.OFFICIAL)).toBe(Infinity);
+    expect(confianza(ROLE_BASE_CONFIDENCE.OFFICIAL, 999)).toBeCloseTo(0.26, 5);
   });
 });
 

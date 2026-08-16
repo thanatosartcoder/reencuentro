@@ -59,22 +59,47 @@ export function confianzaBase(declarado: ReporterRole, acreditado: boolean): num
 }
 
 /** Aporte de cada confirmación, con tope: diez confirmaciones no dan certeza absoluta. */
-const CONFIRMATION_WEIGHT = 0.12;
+export const CONFIRMATION_WEIGHT = 0.12;
 const MAX_CONFIRMATIONS_COUNTED = 8;
 
 /**
- * Una refutación pesa más que una confirmación.
+ * Una refutación pesa MENOS que una confirmación.
  *
- * La asimetría es deliberada: quien dice "esta vía ya está despejada" suele
- * haber pasado por ahí hace minutos, mientras que las confirmaciones se acumulan
- * de gente que repite lo que ya estaba en el mapa. Y el costo de los dos errores
- * no es simétrico: marcar como bloqueada una vía abierta desvía una ambulancia,
- * pero marcar como abierta una vía bloqueada la manda contra un derrumbe.
+ * Antes pesaba el doble (0.25 frente a 0.12), y el comentario que lo justificaba
+ * decía: "marcar como bloqueada una vía abierta desvía una ambulancia, pero
+ * marcar como abierta una vía bloqueada la manda contra un derrumbe".
+ *
+ * Ese razonamiento es correcto y llevaba al número contrario. Una refutación es
+ * precisamente lo que dice "ya está despejada", así que darle más peso acelera
+ * justo el desenlace que el propio comentario señalaba como el peor. Medido con
+ * los pesos viejos sobre un reporte ciudadano (confianza inicial 0.4): una sola
+ * refutación anónima lo dejaba en el umbral de visibilidad y dos lo borraban del
+ * mapa, cuando el `deviceId` que las separa lo elige el propio cliente.
+ *
+ * Con 0.08, medido contra la API en marcha: ocultar un reporte ciudadano pasa de
+ * 1 refutación a 4, y uno de voluntario de 2 a 6. Un reporte de personal
+ * acreditado (0.9) ya no se puede ocultar por esta vía en absoluto: con el tope
+ * de 8 refutaciones contadas, el suelo queda en 0.26, por encima del umbral.
+ *
+ * Sigue sin ser una defensa real —el `deviceId` se sigue inventando— pero
+ * convierte un ataque de dos peticiones en uno que necesita volumen y deja
+ * rastro.
+ *
+ * Lo que sí sigue retirando información obsoleta es el decaimiento por tiempo:
+ * un reporte que nadie vuelve a confirmar se desvanece solo.
  */
-const REFUTATION_WEIGHT = 0.25;
+export const REFUTATION_WEIGHT = 0.08;
+
+/**
+ * Tope de refutaciones contadas, simétrico con el de confirmaciones.
+ *
+ * Sin tope, acumular refutaciones era la vía barata para llevar cualquier
+ * reporte al suelo por mucha corroboración que tuviera.
+ */
+export const MAX_REFUTATIONS_COUNTED = 8;
 
 /** Por debajo de esto un reporte deja de mostrarse por defecto. */
-const DEFAULT_MIN_CONFIDENCE = 0.15;
+export const DEFAULT_MIN_CONFIDENCE = 0.15;
 
 /**
  * Expresión SQL de la confianza vigente.
@@ -97,7 +122,7 @@ function confidenceSql(prefix: string): string {
     GREATEST(0, LEAST(1,
       ${prefix}"baseConfidence"
         + ${CONFIRMATION_WEIGHT} * LEAST(${prefix}"confirmations", ${MAX_CONFIRMATIONS_COUNTED})
-        - ${REFUTATION_WEIGHT} * ${prefix}"refutations"
+        - ${REFUTATION_WEIGHT} * LEAST(${prefix}"refutations", ${MAX_REFUTATIONS_COUNTED})
     ))
     * POWER(2, -(EXTRACT(EPOCH FROM (now() - ${prefix}"lastConfirmedAt")) / 60.0) / NULLIF(${prefix}"halfLifeMinutes", 0))
   `;
@@ -277,21 +302,15 @@ export class GeoService {
       // mostrarse. Lo que se gana es que el estado ya no cambia de forma
       // irreversible sin que nadie lo revise.
       //
-      // ATENCIÓN, esto no cierra el abuso, solo su parte irreversible. Medido
-      // sobre un reporte ciudadano (confianza inicial 0.4):
+      // Esto no cierra el abuso por sí solo: lo que impide que unas pocas
+      // refutaciones anónimas entierren una vía cortada es el peso corregido de
+      // arriba, no esta condición. Aquí solo se evita que el estado cambie de
+      // forma irreversible sin que nadie lo revise.
       //
-      //     1 refutación anónima  -> 0.15, justo en el umbral de visibilidad
-      //     2 refutaciones        -> 0, desaparece del mapa
-      //     recuperarlo exige 7 confirmaciones
-      //
-      // Es decir: dos peticiones HTTP con identificadores de dispositivo
-      // inventados siguen bastando para enterrar una vía cortada. La causa es
-      // la asimetría de pesos —una refutación vale 0.25 y una confirmación
-      // 0.12— y esa asimetría contradice la razón que la justifica más arriba
-      // en este archivo: si lo peor es "marcar como abierta una vía bloqueada",
-      // entonces retirar un bloqueo debería costar MÁS que confirmarlo, no
-      // menos. Cambiar esos números altera cómo se comporta el mapa en una
-      // emergencia, así que no se toca sin decidirlo a propósito.
+      // Lo que sigue abierto es la raíz: el `deviceId` que separa un votante de
+      // otro lo elige el propio cliente. Cerrarlo pide distinguir voto
+      // verificado de no verificado, y eso son columnas nuevas y una decisión
+      // sobre cómo se acredita un dispositivo.
       const acreditado = Boolean(acreditadoPor);
       if (
         acreditado &&
