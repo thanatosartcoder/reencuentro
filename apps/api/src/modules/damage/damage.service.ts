@@ -25,7 +25,7 @@ export class DamageService {
    * opuestas: las zonas sin evaluar son las aisladas, que es donde el daño es
    * más probable.
    */
-  async coverage(): Promise<CoverageView[]> {
+  async coverage(evento?: string): Promise<CoverageView[]> {
     const rows = await this.coverageRepo.find({ order: { city: 'ASC' } });
     return rows.map((row) => ({
       id: row.id,
@@ -48,6 +48,8 @@ export class DamageService {
    * puntos cuando está lejos y polígonos cuando se acerca.
    */
   async query(options: {
+    /** Emergencia a consultar. Sin ella, la que esté en curso. */
+    evento?: string;
     bbox?: string;
     city?: string;
     onlyDamaged?: boolean;
@@ -101,7 +103,7 @@ export class DamageService {
   }
 
   /** Conteo por ciudad, para el tablero y para la leyenda del mapa. */
-  async summary(): Promise<{
+  async summary(evento?: string): Promise<{
     porCiudad: {
       ciudad: string;
       evaluadas: number;

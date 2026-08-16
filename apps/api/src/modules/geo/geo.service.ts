@@ -274,7 +274,7 @@ export class GeoService {
 
   /** Reportes de la ventana visible del mapa. */
   async query(query: QueryZonesDto): Promise<{ items: ZoneView[]; total: number }> {
-    const qb = this.baseQuery(await this.events.primaryId()).andWhere('z.status = :status', {
+    const qb = this.baseQuery(await this.events.idFor(query.evento)).andWhere('z.status = :status', {
       status: ZoneReportStatus.ACTIVE,
     });
 
@@ -317,7 +317,7 @@ export class GeoService {
   async nearby(query: NearbyZonesDto): Promise<{ items: ZoneView[] }> {
     const radius = query.radiusMeters ?? 5_000;
 
-    const qb = this.baseQuery(await this.events.primaryId())
+    const qb = this.baseQuery(await this.events.idFor(query.evento))
       .andWhere('z.status = :status', { status: ZoneReportStatus.ACTIVE })
       .andWhere(
         `ST_DWithin(z."location", ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radius)`,
@@ -347,7 +347,9 @@ export class GeoService {
   }
 
   /** Resumen por departamento para el tablero de situación. */
-  async summaryByDepartment(): Promise<{ department: string; type: string; count: number }[]> {
+  async summaryByDepartment(
+    evento?: string,
+  ): Promise<{ department: string; type: string; count: number }[]> {
     return this.zoneRepo
       .createQueryBuilder('z')
       .select('z.department', 'department')
@@ -355,7 +357,7 @@ export class GeoService {
       .addSelect('COUNT(*)::int', 'count')
       .where('z.status = :status', { status: ZoneReportStatus.ACTIVE })
       .andWhere('z."deletedAt" IS NULL')
-      .andWhere('z."eventId" = :eventId', { eventId: await this.events.primaryId() })
+      .andWhere('z."eventId" = :eventId', { eventId: await this.events.idFor(evento) })
       .andWhere('z.department IS NOT NULL')
       .groupBy('z.department')
       .addGroupBy('z.type')

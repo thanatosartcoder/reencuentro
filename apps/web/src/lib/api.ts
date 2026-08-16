@@ -292,6 +292,9 @@ export interface SituationOverview {
     tipo: string;
     ocurrioEl: string;
     departamentos: string[];
+    /** false cuando se está consultando una emergencia que ya no está activa. */
+    enCurso: boolean;
+    estado: 'ACTIVE' | 'MONITORING' | 'CLOSED';
   } | null;
   evento: {
     name: string;

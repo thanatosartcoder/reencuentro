@@ -1,6 +1,14 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  Min,
+} from 'class-validator';
 import { OverviewService } from './overview.service';
 
 class ContextQueryDto {
@@ -22,6 +30,12 @@ class ContextQueryDto {
   @Min(100)
   @Max(100_000)
   radiusMeters?: number;
+
+  /** Emergencia a consultar. Si no viene, la que esté en curso. */
+  @IsOptional()
+  @IsString()
+  @Length(3, 120)
+  evento?: string;
 }
 
 @Controller('mapa')
@@ -35,13 +49,18 @@ export class OverviewController {
    * "qué hay en este punto".
    */
   @Get('agregado')
-  byMunicipality() {
-    return this.overview.byMunicipality();
+  byMunicipality(@Query('evento') evento?: string) {
+    return this.overview.byMunicipality(evento);
   }
 
   /** Qué más hay alrededor de un punto del mapa. */
   @Get('contexto')
   context(@Query() query: ContextQueryDto) {
-    return this.overview.contextAround(query.lat, query.lon, query.radiusMeters ?? 3_000);
+    return this.overview.contextAround(
+      query.lat,
+      query.lon,
+      query.radiusMeters ?? 3_000,
+      query.evento,
+    );
   }
 }

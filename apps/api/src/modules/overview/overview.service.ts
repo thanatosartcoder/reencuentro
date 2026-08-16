@@ -78,7 +78,7 @@ export class OverviewService {
     private readonly events: EventsService,
   ) {}
 
-  async byMunicipality(): Promise<{
+  async byMunicipality(evento?: string): Promise<{
     items: MunicipalityAggregate[];
     totales: {
       municipios: number;
@@ -95,7 +95,7 @@ export class OverviewService {
     // derrumbes de dos catástrofes distintas daría un mapa que no describe
     // ninguna. Los desaparecidos y los avistamientos NO se acotan, a propósito:
     // una persona puede haber sido reportada durante otra emergencia.
-    const eventId = await this.events.primaryId();
+    const eventId = await this.events.idFor(evento);
 
     const [missing, sightings, zones, damage, aftershocks] = await Promise.all([
       this.missingByMunicipality(),
@@ -274,6 +274,7 @@ export class OverviewService {
     latitude: number,
     longitude: number,
     radiusMeters: number,
+    evento?: string,
   ): Promise<{
     radioMetros: number;
     desaparecidos: { activos: number; menores: number };
@@ -288,7 +289,7 @@ export class OverviewService {
     // las capas de contexto sí se acotan, porque sumar derrumbes de dos
     // catástrofes describiría un lugar que no existe.
     const params = [longitude, latitude, radiusMeters];
-    const paramsConEvento = [...params, await this.events.primaryId()];
+    const paramsConEvento = [...params, await this.events.idFor(evento)];
     const point = `ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography`;
 
     const [missing, sightings, zoneRows, damage, quakes] = await Promise.all([

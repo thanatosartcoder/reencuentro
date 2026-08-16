@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { serverGet } from '@/lib/server-api';
+import { ArchivedNotice, EventSwitcher } from '@/components/EventSwitcher';
 import type { SituationOverview } from '@/lib/api';
 import { ElapsedSince } from '@/components/ElapsedSince';
 
@@ -44,17 +45,34 @@ function evaluatedCities(damage: DamageSummary): string[] {
     : damage.porCiudad.map((c) => c.ciudad);
 }
 
-export default async function SituacionPage() {
+export default async function SituacionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ emergencia?: string }>;
+}) {
+  const { emergencia } = await searchParams;
+  const q = emergencia ? `?evento=${encodeURIComponent(emergencia)}` : '';
+
   // Las tres se piden en paralelo y cada una puede faltar sin tumbar la página:
   // provienen de fuentes distintas con disponibilidad distinta.
   const [data, seismic, damage] = await Promise.all([
-    serverGet<SituationOverview>('/situacion'),
-    serverGet<SeismicSummary>('/sismos/resumen'),
-    serverGet<DamageSummary>('/danos/resumen'),
+    serverGet<SituationOverview>(`/situacion${q}`),
+    serverGet<SeismicSummary>(`/sismos/resumen${q}`),
+    serverGet<DamageSummary>(`/danos/resumen${q}`),
   ]);
+
+  // Consultar una emergencia pasada es solo eso: consultarla. Reportar sobre
+  // ella no tendría a dónde ir — el servidor atribuye todo reporte nuevo a la
+  // emergencia en curso, que puede estar a mil kilómetros de lo que se mira.
+  const soloConsulta = Boolean(data?.emergencia && !data.emergencia.enCurso);
 
   return (
     <div>
+      <EventSwitcher actual={emergencia} base="/" />
+
+      {soloConsulta && data?.emergencia && (
+        <ArchivedNotice nombre={data.emergencia.nombre} base="/" />
+      )}
       {/* Encabezado de boletín, no hero de marketing. Lo primero que se lee es
           qué pasó, dónde y cuánto tiempo lleva pasando. */}
       <section className="bg-ink text-paper">
@@ -103,7 +121,12 @@ export default async function SituacionPage() {
       </section>
 
       {/* Tres destinos, nada más. Quien llega aquí viene a hacer una de tres
-          cosas y debe poder empezarla sin leer nada más. */}
+          cosas y debe poder empezarla sin leer nada más.
+
+          En modo consulta no se ofrecen: reportar sobre una emergencia que ya
+          no está en curso llevaría el reporte a la que sí lo está, que puede
+          estar a mil kilómetros de lo que la persona está mirando. */}
+      {!soloConsulta && (
       <section className="mx-auto max-w-5xl px-4 py-8">
         <div className="grid gap-3 sm:grid-cols-3">
           <BigAction
@@ -126,6 +149,20 @@ export default async function SituacionPage() {
           />
         </div>
       </section>
+      )}
+
+      {/* En modo consulta se ofrece el mapa igual: mirar el mapa de una
+          emergencia pasada es exactamente lo que se vino a hacer. */}
+      {soloConsulta && (
+        <section className="mx-auto max-w-5xl px-4 py-8">
+          <BigAction
+            href={`/mapa?emergencia=${data?.emergencia?.slug ?? ''}`}
+            accent="var(--color-signal)"
+            title="Ver el mapa de esta emergencia"
+            detail="Vías, zonas y daño tal como quedaron registrados"
+          />
+        </section>
+      )}
 
       {/* Cifras oficiales, marcadas como tales y con su corte. Presentarlas
           junto a los reportes de la plataforma sin distinguirlas le daría a
