@@ -11,3 +11,22 @@ uploads/
 
 # Artefacto de compilación de TypeScript: ensucia el diff de cada PR.
 *.tsbuildinfo
+
+# Material criptografico. Nada de esto entra nunca al repositorio.
+#
+# Va aqui porque el procedimiento documentado en .env.example pide ejecutar
+# `openssl genpkey ... -out privada.pem`, y lo natural es hacerlo en el
+# directorio del proyecto. Un despiste ahi publica la clave con la que se abren
+# TODAS las copias de seguridad — es decir, los datos de cada familia que
+# reporto a un desaparecido.
+#
+# Se ignoran tambien las publicas: no son secretas, pero mezclar unas y otras en
+# el arbol es como se acaba subiendo la equivocada.
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+# Cuenta de servicio de Firebase (FCM_SERVICE_ACCOUNT).
+serviceAccount*.json
+*-service-account*.json
