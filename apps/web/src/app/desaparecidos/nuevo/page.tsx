@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { OfficialChannels } from '@/components/OfficialChannels';
 import { submit } from '@/lib/api';
 import { getDeviceId, storeClaim } from '@/lib/device';
 import { enqueuePhoto } from '@/lib/outbox';
@@ -151,6 +152,11 @@ export default function NuevoReportePage() {
         Con el nombre y un teléfono de contacto es suficiente para empezar. Todo lo demás lo
         puedes agregar después, cuando lo sepas o cuando tengas mejor señal.
       </p>
+
+      {/* Antes del formulario, no después: al final lo leería solo quien ya
+          terminó de escribir, y para entonces ya cree que hizo lo que tenía
+          que hacer. */}
+      <OfficialChannels />
 
       <form onSubmit={send} noValidate>
         <section className="mt-8">
@@ -473,9 +479,13 @@ function Confirmation({
 
       <p className="mt-3 text-[17px] leading-snug">
         {queued
-          ? 'No hay señal en este momento. El reporte está guardado y se envía solo en cuanto vuelva la conexión. No necesitas hacer nada más.'
+          ? 'No hay señal en este momento. El reporte está guardado y se envía solo en cuanto vuelva la conexión.'
           : 'A partir de ahora el sistema compara este reporte con cada avistamiento que llega desde hospitales, albergues y equipos de rescate.'}
       </p>
+
+      {/* Aquí es donde alguien piensa "ya está". Es justo el momento en que hay
+          que decirle que le falta el canal que sí puede buscar. */}
+      <OfficialChannels />
 
       {/* El claim token es la única credencial del reportante y solo existe en
           esta pantalla. Si se pierde, el caso sigue vivo pero esta persona deja
