@@ -30,6 +30,29 @@ export function toPhotoView(photo: PersonPhoto) {
   };
 }
 
+/**
+ * Reduce una coordenada a la precision que declara su nombre.
+ *
+ * Dos decimales son algo mas de un kilometro: sigue diciendo en que parte del
+ * municipio fue, que es lo que necesita quien busca, y deja de decir en que
+ * casa. La version anterior devolvia el punto GPS exacto bajo un campo llamado
+ * "aproximada" — la palabra estaba en el nombre y en el comentario, pero no en
+ * los datos, y ese es el tipo de diferencia que nadie revisa dos veces.
+ *
+ * Se redondea al presentar y no al guardar: el motor de coincidencias y el panel
+ * de validacion necesitan el punto exacto para decidir si dos reportes son la
+ * misma persona.
+ */
+function blur(
+  coords: { latitude: number; longitude: number } | null,
+): { latitude: number; longitude: number } | null {
+  if (!coords) return null;
+  return {
+    latitude: Math.round(coords.latitude * 100) / 100,
+    longitude: Math.round(coords.longitude * 100) / 100,
+  };
+}
+
 /** Lo que ve cualquiera: suficiente para reconocer a alguien, nada mas. */
 export function toPublicMissing(report: MissingPersonReport) {
   const coords = fromGeoPoint(report.lastSeenLocation);
@@ -53,7 +76,7 @@ export function toPublicMissing(report: MissingPersonReport) {
     // dato para buscar tiene acceso autenticado.
     department: report.department,
     municipality: report.municipality,
-    lastSeenApproximateLocation: report.isMinor ? null : coords,
+    lastSeenApproximateLocation: report.isMinor ? null : blur(coords),
     lastSeenAt: report.lastSeenAt,
     circumstances: report.circumstances,
     status: report.status,
@@ -120,7 +143,7 @@ export function toPublicSighting(sighting: SightingReport) {
     department: sighting.department,
     municipality: sighting.municipality,
     facilityName: sighting.facilityName,
-    approximateLocation: sighting.isMinor ? null : coords,
+    approximateLocation: sighting.isMinor ? null : blur(coords),
     seenAt: sighting.seenAt,
     status: sighting.status,
     reportedAt: sighting.createdAt,
