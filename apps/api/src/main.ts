@@ -73,6 +73,21 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
 
+  // Cuántos proxies hay delante. Ver la nota en `configuration.ts`: de esto
+  // dependen el límite de peticiones por cliente y la IP que queda en la
+  // bitácora de accesos a datos personales.
+  const hops = config.get<number>('trustProxyHops') ?? 0;
+  if (hops > 0) {
+    app.set('trust proxy', hops);
+    logger.log(`Confiando en ${hops} salto(s) de proxy para la IP del cliente`);
+  } else if (config.get<string>('nodeEnv') === 'production') {
+    logger.warn(
+      'TRUST_PROXY_HOPS no está definida. Si la API corre detrás de un balanceador, ' +
+        'el límite de peticiones será un único cupo compartido por todo el tráfico y ' +
+        'la bitácora registrará la IP del proxy. Ponla en 1 para el caso habitual.',
+    );
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       // Descarta campos no declarados en el DTO en lugar de persistirlos.

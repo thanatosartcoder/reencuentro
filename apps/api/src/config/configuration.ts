@@ -46,6 +46,22 @@ export const configuration = () => ({
     expiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
   },
 
+  /**
+   * Saltos de proxy en los que se confía para leer `X-Forwarded-For`.
+   *
+   * Sin esto, detrás de un balanceador toda petición aparenta venir de la misma
+   * IP: el límite de peticiones deja de ser por cliente y pasa a ser un único
+   * cupo compartido por todo internet —que un solo atacante agota, dejando 429 a
+   * quien intenta reportar— y la bitácora registra la IP del proxy en lugar de
+   * la de quien consultó datos personales.
+   *
+   * Es un número de saltos y no `true` a propósito. Confiar en toda la cadena
+   * deja que el cliente escriba su propia cabecera y elija qué IP se registra en
+   * la bitácora, que es peor que no registrar ninguna. Por defecto 0: un
+   * despliegue directo no debe creerse una cabecera que nadie firmó.
+   */
+  trustProxyHops: int(process.env.TRUST_PROXY_HOPS, 0),
+
   uploads: {
     maxBytes: int(process.env.MAX_PHOTO_BYTES, 8_000_000),
     // Decodificaciones simultáneas. Con el tope de 50 MP por imagen, cuatro son
