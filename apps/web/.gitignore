@@ -6,3 +6,16 @@
 # ensucia el diff de cada PR con un cambio que nadie escribio, igual que pasaba
 # con los .tsbuildinfo.
 next-env.d.ts
+
+# Los escribe `next dev` a partir de Next 16
+# (node_modules/next/dist/server/lib/generate-agent-files.js). Son instrucciones
+# para asistentes de codigo, no fuente del proyecto, y reaparecen en cada
+# arranque: versionarlos mete en los PR un cambio que nadie escribio.
+#
+# Next sugiere lo contrario —committearlos para mantener el arbol limpio—. Aqui
+# se prefiere ignorarlos, que consigue lo mismo sin meter en un repositorio
+# humanitario ficheros dirigidos a una herramienta concreta. Si algun dia
+# interesa conservar el aviso de Next sobre los cambios de la version 16,
+# AGENTS.md se puede versionar a proposito.
+AGENTS.md
+CLAUDE.md
