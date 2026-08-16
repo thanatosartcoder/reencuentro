@@ -22,23 +22,84 @@ export const ROLE_BASE_CONFIDENCE: Record<ReporterRole, number> = {
   [ReporterRole.CITIZEN]: 0.4,
 };
 
+/**
+ * Roles que solo cuentan si hay una cuenta detrás.
+ *
+ * El rol llega en un campo del formulario, y el formulario es público —tiene que
+ * serlo: exigir cuenta para avisar de un derrumbe es perder el aviso—. Pero
+ * mientras el campo se creyera tal cual, escribir `OFFICIAL` bastaba para
+ * arrancar con más del doble de credibilidad que un vecino que reporta lo mismo,
+ * y para colocar un reporte falso por encima de los verdaderos en un mapa que se
+ * usa para decidir por dónde entra una ambulancia.
+ *
+ * Lo que se guarda sigue siendo lo que la persona declaró —es información, y un
+ * coordinador puede quererla— pero la credibilidad se calcula con el rol que se
+ * pudo demostrar.
+ */
+const ROLES_QUE_EXIGEN_ACREDITACION = new Set<ReporterRole>([
+  ReporterRole.OFFICIAL,
+  ReporterRole.RESCUER,
+  ReporterRole.HEALTH_STAFF,
+]);
+
+/**
+ * A qué equivale un rol elevado que nadie respalda.
+ *
+ * No baja hasta CITIZEN: quien se molesta en decir que es rescatista suele
+ * serlo, y castigar la declaración honesta de quien no tiene cuenta en el panel
+ * empeoraría el mapa. Baja al escalón de voluntario, que es "alguien implicado
+ * cuya palabra no está verificada".
+ */
+const ROL_SIN_ACREDITAR = ReporterRole.VOLUNTEER;
+
+export function confianzaBase(declarado: ReporterRole, acreditado: boolean): number {
+  const efectivo =
+    !acreditado && ROLES_QUE_EXIGEN_ACREDITACION.has(declarado) ? ROL_SIN_ACREDITAR : declarado;
+  return ROLE_BASE_CONFIDENCE[efectivo];
+}
+
 /** Aporte de cada confirmación, con tope: diez confirmaciones no dan certeza absoluta. */
-const CONFIRMATION_WEIGHT = 0.12;
+export const CONFIRMATION_WEIGHT = 0.12;
 const MAX_CONFIRMATIONS_COUNTED = 8;
 
 /**
- * Una refutación pesa más que una confirmación.
+ * Una refutación pesa MENOS que una confirmación.
  *
- * La asimetría es deliberada: quien dice "esta vía ya está despejada" suele
- * haber pasado por ahí hace minutos, mientras que las confirmaciones se acumulan
- * de gente que repite lo que ya estaba en el mapa. Y el costo de los dos errores
- * no es simétrico: marcar como bloqueada una vía abierta desvía una ambulancia,
- * pero marcar como abierta una vía bloqueada la manda contra un derrumbe.
+ * Antes pesaba el doble (0.25 frente a 0.12), y el comentario que lo justificaba
+ * decía: "marcar como bloqueada una vía abierta desvía una ambulancia, pero
+ * marcar como abierta una vía bloqueada la manda contra un derrumbe".
+ *
+ * Ese razonamiento es correcto y llevaba al número contrario. Una refutación es
+ * precisamente lo que dice "ya está despejada", así que darle más peso acelera
+ * justo el desenlace que el propio comentario señalaba como el peor. Medido con
+ * los pesos viejos sobre un reporte ciudadano (confianza inicial 0.4): una sola
+ * refutación anónima lo dejaba en el umbral de visibilidad y dos lo borraban del
+ * mapa, cuando el `deviceId` que las separa lo elige el propio cliente.
+ *
+ * Con 0.08, medido contra la API en marcha: ocultar un reporte ciudadano pasa de
+ * 1 refutación a 4, y uno de voluntario de 2 a 6. Un reporte de personal
+ * acreditado (0.9) ya no se puede ocultar por esta vía en absoluto: con el tope
+ * de 8 refutaciones contadas, el suelo queda en 0.26, por encima del umbral.
+ *
+ * Sigue sin ser una defensa real —el `deviceId` se sigue inventando— pero
+ * convierte un ataque de dos peticiones en uno que necesita volumen y deja
+ * rastro.
+ *
+ * Lo que sí sigue retirando información obsoleta es el decaimiento por tiempo:
+ * un reporte que nadie vuelve a confirmar se desvanece solo.
  */
-const REFUTATION_WEIGHT = 0.25;
+export const REFUTATION_WEIGHT = 0.08;
+
+/**
+ * Tope de refutaciones contadas, simétrico con el de confirmaciones.
+ *
+ * Sin tope, acumular refutaciones era la vía barata para llevar cualquier
+ * reporte al suelo por mucha corroboración que tuviera.
+ */
+export const MAX_REFUTATIONS_COUNTED = 8;
 
 /** Por debajo de esto un reporte deja de mostrarse por defecto. */
-const DEFAULT_MIN_CONFIDENCE = 0.15;
+export const DEFAULT_MIN_CONFIDENCE = 0.15;
 
 /**
  * Expresión SQL de la confianza vigente.
@@ -61,7 +122,7 @@ function confidenceSql(prefix: string): string {
     GREATEST(0, LEAST(1,
       ${prefix}"baseConfidence"
         + ${CONFIRMATION_WEIGHT} * LEAST(${prefix}"confirmations", ${MAX_CONFIRMATIONS_COUNTED})
-        - ${REFUTATION_WEIGHT} * ${prefix}"refutations"
+        - ${REFUTATION_WEIGHT} * LEAST(${prefix}"refutations", ${MAX_REFUTATIONS_COUNTED})
     ))
     * POWER(2, -(EXTRACT(EPOCH FROM (now() - ${prefix}"lastConfirmedAt")) / 60.0) / NULLIF(${prefix}"halfLifeMinutes", 0))
   `;
@@ -95,7 +156,11 @@ export class GeoService {
    * simple append sin conflictos que resolver. Dos personas que reportan el
    * mismo derrumbe no chocan: se refuerzan.
    */
-  async createReport(dto: CreateZoneReportDto): Promise<{ report: ZoneReport; duplicate: boolean }> {
+  async createReport(
+    dto: CreateZoneReportDto,
+    /** Presente solo si quien envía demostró tener cuenta en el panel. */
+    acreditadoPor?: { sub: string },
+  ): Promise<{ report: ZoneReport; duplicate: boolean }> {
     const existing = await this.zoneRepo.findOne({ where: { clientUuid: dto.clientUuid } });
     if (existing) return { report: existing, duplicate: true };
 
@@ -131,7 +196,7 @@ export class GeoService {
       reportedAt,
       halfLifeMinutes: config.halfLifeMinutes,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
-      baseConfidence: ROLE_BASE_CONFIDENCE[role],
+      baseConfidence: confianzaBase(role, Boolean(acreditadoPor)),
       confirmations: 0,
       refutations: 0,
       // El reloj de decaimiento arranca en el momento de la observación, no en
@@ -168,7 +233,11 @@ export class GeoService {
    * decaimiento: la vía sigue bloqueada porque alguien acaba de verla así, no
    * porque alguien la vio así hace ocho horas.
    */
-  async vote(reportId: string, dto: VoteZoneReportDto): Promise<ZoneReport> {
+  async vote(
+    reportId: string,
+    dto: VoteZoneReportDto,
+    acreditadoPor?: { sub: string },
+  ): Promise<ZoneReport> {
     return this.dataSource.transaction(async (manager) => {
       const report = await manager.findOne(ZoneReport, { where: { id: reportId } });
       if (!report) throw new NotFoundException('Reporte de zona no encontrado');
@@ -219,9 +288,38 @@ export class GeoService {
       }
 
       // Suficientes refutaciones sobre confirmaciones: la situación cambió.
-      if (report.refutations >= 3 && report.refutations > report.confirmations) {
+      //
+      // El cierre exige que al menos quien lo dispara esté acreditado. Antes
+      // bastaban tres refutaciones anónimas, y la única defensa contra repetir
+      // el voto era el `deviceId` — que lo elige el propio cliente. Es decir:
+      // tres peticiones HTTP con tres identificadores inventados retiraban del
+      // mapa cualquier vía cortada, de forma irreversible y sin que nadie lo
+      // revisara. Para un mapa que se usa para decidir por dónde entra una
+      // ambulancia, ese es el peor final posible.
+      //
+      // Sin acreditación las refutaciones siguen contando: bajan la confianza
+      // por la fórmula de arriba y, si son suficientes, el reporte deja de
+      // mostrarse. Lo que se gana es que el estado ya no cambia de forma
+      // irreversible sin que nadie lo revise.
+      //
+      // Esto no cierra el abuso por sí solo: lo que impide que unas pocas
+      // refutaciones anónimas entierren una vía cortada es el peso corregido de
+      // arriba, no esta condición. Aquí solo se evita que el estado cambie de
+      // forma irreversible sin que nadie lo revise.
+      //
+      // Lo que sigue abierto es la raíz: el `deviceId` que separa un votante de
+      // otro lo elige el propio cliente. Cerrarlo pide distinguir voto
+      // verificado de no verificado, y eso son columnas nuevas y una decisión
+      // sobre cómo se acredita un dispositivo.
+      const acreditado = Boolean(acreditadoPor);
+      if (
+        acreditado &&
+        dto.vote === VoteKind.REFUTE &&
+        report.refutations >= 3 &&
+        report.refutations > report.confirmations
+      ) {
         report.status = ZoneReportStatus.RESOLVED;
-        report.resolutionNotes = 'Cerrado automáticamente por refutaciones de la comunidad';
+        report.resolutionNotes = 'Cerrado por refutaciones, confirmado por personal acreditado';
       }
 
       const saved = await manager.save(report);

@@ -23,6 +23,18 @@ export interface EnqueueNotificationInput {
 
 const MAX_ATTEMPTS = 8;
 
+/**
+ * Fallo que no mejora reintentando.
+ *
+ * Sin esta distinción, "este destinatario no tiene ningún dispositivo con push"
+ * y "FCM devolvió 503" se trataban igual: ocho intentos con espera creciente
+ * hasta media hora. Como la mayoría de quien reporta lo hace desde un navegador
+ * sin push registrado, la cola se llenaba de filas condenadas que el despachador
+ * volvía a mirar cada quince segundos durante horas — trabajo constante para
+ * entregar cero mensajes, y ruido que tapa los fallos que sí importan.
+ */
+class EntregaImposible extends Error {}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -127,7 +139,9 @@ export class NotificationsService {
           // SMS y correo quedan pendientes de proveedor. Marcarlas como
           // fallidas en vez de reintentar para siempre evita que la cola se
           // llene de filas que nadie puede entregar.
-          throw new Error(`Canal ${notification.channel} sin proveedor configurado`);
+          throw new EntregaImposible(
+            `Canal ${notification.channel} sin proveedor configurado`,
+          );
       }
 
       await this.outboxRepo.update(notification.id, {
@@ -139,6 +153,19 @@ export class NotificationsService {
     } catch (error) {
       const attempts = notification.attempts + 1;
       const message = error instanceof Error ? error.message : String(error);
+
+      // Lo que no puede salir nunca se cierra a la primera. Reintentarlo no lo
+      // arregla y mantiene viva una fila que el despachador vuelve a recoger
+      // cada quince segundos.
+      if (error instanceof EntregaImposible) {
+        await this.outboxRepo.update(notification.id, {
+          status: NotificationStatus.FAILED,
+          attempts,
+          lastError: message,
+        });
+        this.logger.debug(`Notificación ${notification.id} no entregable: ${message}`);
+        return;
+      }
 
       if (attempts >= MAX_ATTEMPTS) {
         await this.outboxRepo.update(notification.id, {
@@ -166,11 +193,24 @@ export class NotificationsService {
   /**
    * Envio push. Requiere FCM_SERVER_KEY configurada; sin proveedor la
    * notificacion se marca como fallida en lugar de fingir que salio.
+   *
+   * PENDIENTE: esto habla con la API legacy de FCM (`/fcm/send` con
+   * `Authorization: key=...`), que Google retiró. Tal como está, **ningún push
+   * sale**: el servidor responde 4xx y la notificacion muere. El canal
+   * WebSocket sigue funcionando, así que quien tiene la pantalla abierta se
+   * entera y el fallo pasa desapercibido — que es justo lo que lo hace
+   * peligroso, porque el push es el canal para quien *no* está mirando.
+   *
+   * Migrar a FCM HTTP v1 no es un cambio de URL: exige una cuenta de servicio,
+   * firmar un JWT y pedir un token OAuth2 por cada tanda. Queda anotado aparte
+   * porque es una función, no un parche.
    */
   private async deliverPush(notification: NotificationOutbox): Promise<void> {
     const serverKey = process.env.FCM_SERVER_KEY;
     if (!serverKey) {
-      throw new Error('FCM_SERVER_KEY no configurada');
+      // Sin proveedor no hay reintento que valga: la variable no va a aparecer
+      // sola dentro de media hora.
+      throw new EntregaImposible('FCM_SERVER_KEY no configurada');
     }
 
     const devices = await this.deviceRepo
@@ -180,7 +220,10 @@ export class NotificationsService {
       .getMany();
 
     if (!devices.length) {
-      throw new Error('Sin dispositivos registrados para este destinatario');
+      // El caso más común, no una anomalía: quien reporta desde el navegador
+      // suele no registrar push, y le llega el aviso por el canal WebSocket y
+      // por la pantalla "Mis reportes". Que esta fila muera aquí es lo correcto.
+      throw new EntregaImposible('Sin dispositivos registrados para este destinatario');
     }
 
     const tokens = devices.map((d) => d.pushToken).filter((t): t is string => Boolean(t));
@@ -200,7 +243,13 @@ export class NotificationsService {
     });
 
     if (!response.ok) {
-      throw new Error(`FCM respondió ${response.status}: ${await response.text()}`);
+      const detalle = `FCM respondió ${response.status}: ${await response.text()}`;
+      // 4xx es un rechazo del contenido o de la credencial: repetirlo da lo
+      // mismo. Solo se reintenta lo que puede cambiar por sí solo (5xx, red).
+      if (response.status >= 400 && response.status < 500) {
+        throw new EntregaImposible(detalle);
+      }
+      throw new Error(detalle);
     }
   }
 

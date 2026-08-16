@@ -12,11 +12,48 @@ import {
   Max,
   MaxLength,
   Min,
+  Validate,
   ValidateNested,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
 } from 'class-validator';
 import { GeoPointDto } from 'src/common/dto/geo-point.dto';
 import { ReporterRole } from 'src/modules/persons/persons.enums';
 import { VoteKind, ZoneReportType } from '../geo.enums';
+
+/**
+ * Valida que un trazado sea una lista de pares [longitud, latitud] reales.
+ *
+ * El tipo de TypeScript decía `[number, number][]` y no comprobaba nada en
+ * ejecución: `path: ["<algo>", {}]` pasaba la validación, entraba en un
+ * `LineString` y llegaba hasta la columna `geography`, donde reventaba como un
+ * 500 con la traza de la base en lugar de como un 400 que explica qué corregir.
+ */
+@ValidatorConstraint({ name: 'trazadoValido' })
+export class TrazadoValido implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (par) =>
+          Array.isArray(par) &&
+          par.length === 2 &&
+          typeof par[0] === 'number' &&
+          typeof par[1] === 'number' &&
+          Number.isFinite(par[0]) &&
+          Number.isFinite(par[1]) &&
+          par[0] >= -180 &&
+          par[0] <= 180 &&
+          par[1] >= -90 &&
+          par[1] <= 90,
+      )
+    );
+  }
+
+  defaultMessage(): string {
+    return 'path debe ser una lista de pares [longitud, latitud] dentro de rango';
+  }
+}
 
 export class CreateZoneReportDto {
   @IsUUID('4', { message: 'clientUuid debe ser un UUID v4 generado en el cliente' })
@@ -38,6 +75,7 @@ export class CreateZoneReportDto {
   @IsArray()
   @ArrayMinSize(2)
   @ArrayMaxSize(500)
+  @Validate(TrazadoValido)
   path?: [number, number][];
 
   @IsOptional()

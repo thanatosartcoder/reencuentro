@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { hashToken } from 'src/common/crypto/tokens';
 import { NotificationsService } from './notifications.service';
@@ -48,9 +48,13 @@ export class NotificationsController {
   /**
    * Historial de avisos de un reportante. Se autentica con el claim token, no
    * con una sesión: quien reporta no tiene cuenta.
+   *
+   * El token va en cabecera y no en la URL: es una credencial, y en la query
+   * acababa en el registro de accesos de cada intermediario y en el historial
+   * del navegador.
    */
   @Get()
-  async list(@Query('claimToken') claimToken: string) {
+  async list(@Headers('x-claim-token') claimToken?: string) {
     if (!claimToken) return { items: [] };
 
     const items = await this.notifications.listForRecipient(hashToken(claimToken));

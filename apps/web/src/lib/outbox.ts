@@ -25,6 +25,16 @@ export interface PendingPhoto {
   ownerType: 'MISSING_REPORT' | 'SIGHTING_REPORT';
   ownerId: string;
   blob: Blob;
+  /**
+   * Credencial del reporte al que pertenece. El servidor la exige para adjuntar.
+   *
+   * Opcional porque una foto encolada sin señal se guarda antes de que el
+   * reporte exista en el servidor, y hasta entonces el token no ha sido emitido.
+   * Al vaciar la cola se resuelve desde los claims guardados: los reportes se
+   * envían antes que las fotos, así que para cuando le toca a la foto el token
+   * ya está en este dispositivo.
+   */
+  claimToken?: string;
   createdAt: number;
 }
 

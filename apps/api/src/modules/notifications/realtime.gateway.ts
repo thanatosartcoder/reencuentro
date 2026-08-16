@@ -10,6 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { hashToken } from 'src/common/crypto/tokens';
+import { corsOrigins } from 'src/config/configuration';
 
 /** Sala privada de un reportante, derivada del hash de su claim token. */
 export const claimRoom = (claimTokenHash: string) => `claim:${claimTokenHash}`;
@@ -28,8 +29,30 @@ export const MAP_ROOM = 'map';
  * cuando llegue la respuesta, y por eso toda notificacion pasa primero por el
  * outbox persistente. Este gateway es la ruta rapida, no la unica.
  */
+/**
+ * Orígenes admitidos en el canal en vivo.
+ *
+ * Antes era `origin: true`, que refleja el origen que venga y, con
+ * `credentials: true`, autoriza a cualquier página de internet a abrir el canal
+ * en nombre de quien la visite. El resto de la API ya usaba una lista blanca;
+ * esto era la excepción, y las excepciones en una regla de origen son las que
+ * nadie recuerda cuando se añade la primera cosa autenticada al socket.
+ *
+ * Se resuelve por conexión y no al importar el módulo para que `dotenv` haya
+ * cargado. Una petición sin `Origin` —un cliente nativo, una sonda— se admite:
+ * la regla existe para acotar lo que un navegador puede hacer en nombre de un
+ * tercero, y sin navegador no hay ese riesgo que acotar.
+ */
+const permitirOrigen = (
+  origin: string | undefined,
+  callback: (err: Error | null, allow?: boolean) => void,
+): void => {
+  if (!origin || corsOrigins().includes(origin)) return callback(null, true);
+  callback(null, false);
+};
+
 @WebSocketGateway({
-  cors: { origin: true, credentials: true },
+  cors: { origin: permitirOrigen, credentials: true },
   namespace: '/realtime',
 })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {

@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
-import { IsEnum, IsUUID } from 'class-validator';
+import { IsEnum, IsString, IsUUID, Length } from 'class-validator';
 import { PhotosService, UploadedPhoto } from './photos.service';
 import { PhotoOwnerType } from './persons.enums';
 
@@ -24,6 +24,21 @@ class UploadPhotoDto {
 
   @IsUUID('4')
   ownerId: string;
+
+  /**
+   * El claim token del reporte al que se adjunta.
+   *
+   * Es la credencial de quien reportó: el servidor la entregó una sola vez al
+   * crear el caso y guarda únicamente su hash. Sin ella, conocer un `ownerId`
+   * —que el listado público devuelve— bastaba para colgarle una foto a
+   * cualquiera.
+   *
+   * 43 caracteres es la longitud de 32 bytes en base64url; el margen cubre un
+   * token que llegue con relleno.
+   */
+  @IsString()
+  @Length(43, 64)
+  claimToken: string;
 }
 
 @Controller()
@@ -48,6 +63,7 @@ export class PhotosController {
       clientUuid: dto.clientUuid,
       ownerType: dto.ownerType,
       ownerId: dto.ownerId,
+      claimToken: dto.claimToken,
     });
 
     return {

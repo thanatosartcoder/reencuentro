@@ -8,13 +8,27 @@ function bool(value: string | undefined, fallback = false): boolean {
   return value === 'true' || value === '1';
 }
 
+/**
+ * Orígenes admitidos, leídos en el momento de usarlos.
+ *
+ * Se exporta como función y no como constante porque el gateway de WebSocket la
+ * consulta por conexión: sus opciones se fijan al importar el módulo, y en ese
+ * instante `dotenv` puede no haber cargado todavía. Leerlo tarde evita que la
+ * lista quede vacía por un problema de orden de arranque — que aquí se
+ * traduciría en rechazar a todo el mundo o, peor, en tener que aflojar la regla
+ * para que funcione.
+ */
+export function corsOrigins(): string[] {
+  return (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export const configuration = () => ({
   port: int(process.env.PORT, 4000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
-  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins: corsOrigins(),
 
   database: {
     host: process.env.DB_HOST ?? 'localhost',
@@ -40,9 +54,27 @@ export const configuration = () => ({
   },
 
   jwt: {
+    // El valor por defecto solo sirve para desarrollo. `assertJwtSecret` en el
+    // arranque impide que un despliegue de producción llegue a usarlo.
     secret: process.env.JWT_SECRET ?? 'dev-secret-inseguro',
     expiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
   },
+
+  /**
+   * Saltos de proxy en los que se confía para leer `X-Forwarded-For`.
+   *
+   * Sin esto, detrás de un balanceador toda petición aparenta venir de la misma
+   * IP: el límite de peticiones deja de ser por cliente y pasa a ser un único
+   * cupo compartido por todo internet —que un solo atacante agota, dejando 429 a
+   * quien intenta reportar— y la bitácora registra la IP del proxy en lugar de
+   * la de quien consultó datos personales.
+   *
+   * Es un número de saltos y no `true` a propósito. Confiar en toda la cadena
+   * deja que el cliente escriba su propia cabecera y elija qué IP se registra en
+   * la bitácora, que es peor que no registrar ninguna. Por defecto 0: un
+   * despliegue directo no debe creerse una cabecera que nadie firmó.
+   */
+  trustProxyHops: int(process.env.TRUST_PROXY_HOPS, 0),
 
   uploads: {
     maxBytes: int(process.env.MAX_PHOTO_BYTES, 8_000_000),

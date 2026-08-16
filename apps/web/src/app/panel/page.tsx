@@ -10,9 +10,9 @@ import { DataSources } from '@/components/DataSources';
 import { Operators } from '@/components/Operators';
 import { Backups } from '@/components/Backups';
 import { Events } from '@/components/Events';
+import { Moderacion } from '@/components/Moderacion';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
-const MUST_CHANGE_KEY = 'reencuentro.mustChangePassword';
 
 interface Candidate {
   id: string;
@@ -80,15 +80,74 @@ export default function PanelPage() {
   const [token, setToken] = useState<string | null>(null);
   const [mustChange, setMustChange] = useState(false);
   const [changing, setChanging] = useState(false);
+  /** Mientras se comprueba la sesión con el servidor. Evita un parpadeo al login. */
+  const [comprobando, setComprobando] = useState(true);
 
+  /**
+   * La sesión se valida contra el servidor al abrir, no se deduce del navegador.
+   *
+   * Antes, que hubiera que cambiar la contraseña se leía de una clave de
+   * `localStorage`: borrarla saltaba la pantalla obligatoria. El servidor sí
+   * bloqueaba de verdad —el guard rechaza todo lo demás con 403— así que el
+   * resultado era una interfaz rota, no un acceso indebido. Aun así, preguntarle
+   * al servidor es lo correcto: es quien lo sabe.
+   *
+   * De paso arregla el otro caso: un token caducado en `localStorage` mostraba
+   * la cola de revisión y luego fallaba petición por petición, en lugar de pedir
+   * que se entre otra vez.
+   */
   useEffect(() => {
-    setToken(localStorage.getItem(TOKEN_KEY));
-    setMustChange(localStorage.getItem(MUST_CHANGE_KEY) === 'true');
+    const guardado = localStorage.getItem(TOKEN_KEY);
+    if (!guardado) {
+      setComprobando(false);
+      return;
+    }
+
+    let vigente = true;
+    void api
+      .get<{ mustChangePassword?: boolean }>('/auth/me', {
+        headers: { Authorization: `Bearer ${guardado}` },
+      })
+      .then((operador) => {
+        if (!vigente) return;
+        setToken(guardado);
+        setMustChange(Boolean(operador.mustChangePassword));
+      })
+      .catch((error: unknown) => {
+        if (!vigente) return;
+        // Solo se descarta la sesión si el servidor la rechaza. Un fallo de red
+        // no puede desloguear a quien está revisando coincidencias.
+        if (error instanceof ApiError && error.status === 401) {
+          localStorage.removeItem(TOKEN_KEY);
+        } else {
+          setToken(guardado);
+        }
+      })
+      .finally(() => {
+        if (vigente) setComprobando(false);
+      });
+
+    return () => {
+      vigente = false;
+    };
   }, []);
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(MUST_CHANGE_KEY);
+
+    // El service worker ya no guarda nada del panel, pero un dispositivo que
+    // venga de una versión anterior puede tener en disco la cola de validación
+    // con documentos y notas médicas. Cerrar sesión tiene que borrarlo: en un
+    // albergue el siguiente turno usa el mismo teléfono.
+    if (typeof caches !== 'undefined') {
+      void caches
+        .keys()
+        .then((keys) =>
+          Promise.all(keys.filter((k) => k.includes('data')).map((k) => caches.delete(k))),
+        )
+        .catch(() => undefined);
+    }
+
     setToken(null);
     setMustChange(false);
     setChanging(false);
@@ -96,11 +155,18 @@ export default function PanelPage() {
 
   const onPasswordChanged = (newToken: string) => {
     localStorage.setItem(TOKEN_KEY, newToken);
-    localStorage.removeItem(MUST_CHANGE_KEY);
     setToken(newToken);
     setMustChange(false);
     setChanging(false);
   };
+
+  if (comprobando) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-12">
+        <p className="text-[16px] text-ink-soft">Comprobando la sesión…</p>
+      </div>
+    );
+  }
 
   if (token === null) {
     return (
@@ -108,7 +174,6 @@ export default function PanelPage() {
         onLogin={(newToken, needsChange) => {
           setToken(newToken);
           setMustChange(needsChange);
-          if (needsChange) localStorage.setItem(MUST_CHANGE_KEY, 'true');
         }}
       />
     );
@@ -288,6 +353,8 @@ function Queue({
       </p>
 
       <Events token={token} />
+
+      <Moderacion token={token} />
 
       <Operators token={token} />
 

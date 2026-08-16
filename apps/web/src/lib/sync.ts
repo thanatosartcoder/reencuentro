@@ -9,7 +9,7 @@ import {
   setMeta,
   getMeta,
 } from './outbox';
-import { storeClaim } from './device';
+import { getStoredClaims, storeClaim } from './device';
 
 interface PushResult {
   clientUuid: string;
@@ -65,6 +65,7 @@ export async function flushOutbox(): Promise<{ sent: number; failed: number } | 
           fullName: String(entry?.payload.fullName ?? entry?.label ?? 'Reporte'),
           reportId: result.id ?? result.clientUuid,
           createdAt: new Date().toISOString(),
+          kind: entry?.type === 'SIGHTING' ? 'SIGHTING' : 'MISSING',
         });
       }
       await remove(result.clientUuid);
@@ -84,21 +85,36 @@ export async function flushOutbox(): Promise<{ sent: number; failed: number } | 
 /**
  * Sube las fotos encoladas.
  *
- * Se hace después de vaciar el outbox de reportes: la foto necesita que su
- * reporte exista en el servidor. Como el id del reporte es el UUID que generó
- * el cliente, la foto ya sabe a qué caso pertenece desde antes de que hubiera
- * conexión, y no hace falta esperar a que el servidor asigne una identidad.
+ * Se hace después de vaciar el outbox de reportes por dos razones: la foto
+ * necesita que su reporte exista en el servidor, y necesita el claim token que
+ * ese envío devuelve. Como el id del reporte es el UUID que generó el cliente,
+ * la foto ya sabe a qué caso pertenece desde antes de que hubiera conexión, y no
+ * hace falta esperar a que el servidor asigne una identidad.
  */
 export async function flushPhotos(): Promise<number> {
   const photos = await listPendingPhotos();
+  if (!photos.length) return 0;
+
+  // Los claims se leen una vez y no por foto: son unos pocos y el acceso a
+  // localStorage dentro del bucle no aporta nada.
+  const claims = getStoredClaims();
   let uploaded = 0;
 
   for (const photo of photos) {
+    // El token puede venir con la foto —cuando el reporte ya se había enviado al
+    // encolarla— o de los claims guardados, que es el caso de lo que se creó sin
+    // señal. Si no está en ninguno, la subida se rechazaría con un 401 y la foto
+    // se perdería; se deja en la cola para el siguiente intento.
+    const claimToken =
+      photo.claimToken ?? claims.find((c) => c.reportId === photo.ownerId)?.claimToken;
+    if (!claimToken) continue;
+
     const form = new FormData();
     form.append('file', photo.blob, `${photo.clientUuid}.jpg`);
     form.append('clientUuid', photo.clientUuid);
     form.append('ownerType', photo.ownerType);
     form.append('ownerId', photo.ownerId);
+    form.append('claimToken', claimToken);
 
     try {
       const response = await fetch('/api/personas/fotos', { method: 'POST', body: form });

@@ -26,6 +26,19 @@ export interface StoredClaim {
   fullName: string;
   reportId: string;
   createdAt: string;
+  /**
+   * Qué se reportó.
+   *
+   * Un avistamiento también recibe claim token —lo necesita para adjuntar su
+   * foto— pero no se sigue desde "Mis reportes": esa pantalla consulta el
+   * seguimiento de una desaparición, y pedirlo con el token de un avistamiento
+   * responde 401. Se distingue aquí en lugar de descubrirlo por el error.
+   *
+   * Opcional por los claims que ya estén guardados en dispositivos que
+   * actualicen: sin el campo, se asumen desapariciones, que es lo único que se
+   * guardaba antes.
+   */
+  kind?: 'MISSING' | 'SIGHTING';
 }
 
 /**

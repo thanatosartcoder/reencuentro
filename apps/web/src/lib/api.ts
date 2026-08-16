@@ -44,6 +44,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/**
+ * Cabecera con la que se presenta un claim token.
+ *
+ * Va en cabecera y no en la query porque es una credencial: da acceso al
+ * documento, el teléfono y las notas médicas del reporte. En la URL acababa en
+ * el registro de accesos del servidor y de cada intermediario, en el historial
+ * del navegador y en cualquier captura de pantalla.
+ */
+export function claimHeader(claimToken: string): Record<string, string> {
+  return { 'X-Claim-Token': claimToken };
+}
+
 export const api = {
   get: <T>(path: string, init?: RequestInit) => request<T>(path, { ...init, method: 'GET' }),
   post: <T>(path: string, body: unknown, init?: RequestInit) =>

@@ -9,6 +9,46 @@ import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { keyringInfo } from './common/crypto/field-crypto';
 
+/**
+ * Secretos que trae la instalación y nunca pueden firmar una sesión real.
+ *
+ * El primero es el valor por defecto del código; el segundo, el que copia
+ * `.env.example` y que `init-env` deja intacto — a diferencia de la clave de
+ * cifrado, que sí se genera al azar. Esa asimetría es justo la que hace que
+ * este se olvide.
+ */
+const SECRETOS_DE_INSTALACION = new Set([
+  'dev-secret-inseguro',
+  'cambiar-este-secreto-en-produccion',
+]);
+
+/** Longitud mínima con la que un secreto HMAC resiste una búsqueda por fuerza bruta. */
+const MIN_JWT_SECRET_LENGTH = 32;
+
+function assertJwtSecret(config: ConfigService, logger: Logger): void {
+  const secret = config.get<string>('jwt.secret') ?? '';
+  const esProduccion = config.get<string>('nodeEnv') === 'production';
+
+  const problema = SECRETOS_DE_INSTALACION.has(secret)
+    ? 'JWT_SECRET sigue con el valor que trae la instalación, que está publicado en el repositorio.'
+    : secret.length < MIN_JWT_SECRET_LENGTH
+      ? `JWT_SECRET tiene ${secret.length} caracteres y el mínimo es ${MIN_JWT_SECRET_LENGTH}.`
+      : null;
+
+  if (!problema) return;
+
+  // En producción no se arranca. En desarrollo se avisa y se sigue: pedir un
+  // secreto propio para levantar la API en local no protege nada y sí estorba.
+  if (esProduccion) {
+    throw new Error(
+      `${problema} Cualquiera podría firmar un token de administrador. ` +
+        'Genera uno con: openssl rand -base64 48',
+    );
+  }
+
+  logger.warn(`${problema} Aceptable en desarrollo, nunca en producción.`);
+}
+
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false });
   const config = app.get(ConfigService);
@@ -24,7 +64,29 @@ async function bootstrap(): Promise<void> {
     `Cifrado de campos: claves [${llavero.ids.join(', ')}], activa ${llavero.activeId}`,
   );
 
+  // Igual que el llavero: se comprueba antes de escuchar. Un despliegue que
+  // firma sesiones con el secreto que trae el repositorio es un panel de
+  // validación abierto a cualquiera que sepa leerlo, y el síntoma no aparece
+  // nunca — todo funciona, simplemente cualquiera puede fabricarse un token de
+  // administrador.
+  assertJwtSecret(config, logger);
+
   app.setGlobalPrefix('api');
+
+  // Cuántos proxies hay delante. Ver la nota en `configuration.ts`: de esto
+  // dependen el límite de peticiones por cliente y la IP que queda en la
+  // bitácora de accesos a datos personales.
+  const hops = config.get<number>('trustProxyHops') ?? 0;
+  if (hops > 0) {
+    app.set('trust proxy', hops);
+    logger.log(`Confiando en ${hops} salto(s) de proxy para la IP del cliente`);
+  } else if (config.get<string>('nodeEnv') === 'production') {
+    logger.warn(
+      'TRUST_PROXY_HOPS no está definida. Si la API corre detrás de un balanceador, ' +
+        'el límite de peticiones será un único cupo compartido por todo el tráfico y ' +
+        'la bitácora registrará la IP del proxy. Ponla en 1 para el caso habitual.',
+    );
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -51,4 +113,13 @@ async function bootstrap(): Promise<void> {
   logger.log(`API escuchando en el puerto ${port} (prefijo /api)`);
 }
 
-void bootstrap();
+// El fallo se registra y se sale con código distinto de cero. Sin este `catch`,
+// un arranque abortado sale como "unhandled rejection" con una traza cruda, y en
+// los registros de la plataforma eso se lee como un fallo del runtime en lugar
+// de como lo que es: una variable de entorno que falta.
+bootstrap().catch((error: unknown) => {
+  new Logger('Bootstrap').error(
+    `La API no pudo arrancar: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  process.exit(1);
+});

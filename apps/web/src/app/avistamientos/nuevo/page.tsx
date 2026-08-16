@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { submit } from '@/lib/api';
-import { getDeviceId } from '@/lib/device';
+import { getDeviceId, storeClaim } from '@/lib/device';
 import { enqueuePhoto } from '@/lib/outbox';
 import {
   ChoiceGroup,
@@ -63,7 +63,10 @@ export default function NuevoAvistamientoPage() {
     const clientUuid = crypto.randomUUID();
 
     try {
-      const { queued } = await submit({
+      const { result: created, queued } = await submit<{
+        claimToken: string | null;
+        report: { id: string };
+      }>({
         path: '/personas/avistamientos',
         type: 'SIGHTING',
         clientUuid,
@@ -96,12 +99,26 @@ export default function NuevoAvistamientoPage() {
         label: `Avistamiento${fullName ? ` de ${fullName.trim()}` : ''}`,
       });
 
+      // El avistamiento también recibe un claim token, y hasta ahora se
+      // descartaba. Es la credencial con la que se adjunta su foto, y el
+      // servidor guarda solo el hash: si no se guarda aquí, no vuelve a existir.
+      if (created?.claimToken) {
+        storeClaim({
+          claimToken: created.claimToken,
+          fullName: fullName.trim() || 'Avistamiento',
+          reportId: created.report.id,
+          createdAt: new Date().toISOString(),
+          kind: 'SIGHTING',
+        });
+      }
+
       if (photo) {
         await enqueuePhoto({
           clientUuid: crypto.randomUUID(),
           ownerType: 'SIGHTING_REPORT',
           ownerId: clientUuid,
           blob: photo,
+          claimToken: created?.claimToken ?? undefined,
         });
       }
 
