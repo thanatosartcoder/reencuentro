@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+
 /** Punto GeoJSON tal como TypeORM lo entrega y lo espera en columnas `geography`. */
 export interface GeoPoint {
   type: 'Point';
@@ -56,12 +58,30 @@ export interface BoundingBox {
   maxLat: number;
 }
 
-/** Parsea "minLon,minLat,maxLon,maxLat" tal como lo envia el visor del mapa. */
+/**
+ * Parsea "minLon,minLat,maxLon,maxLat" tal como lo envia el visor del mapa.
+ *
+ * Lanza `BadRequestException` y no un `Error` pelado: un bbox mal formado es un
+ * error de quien llama, y saliendo como 500 se mezclaba con las caidas reales
+ * del servidor — tanto en lo que ve el cliente como en cualquier alerta que
+ * cuente errores de servidor.
+ */
 export function parseBbox(raw: string): BoundingBox {
   const parts = raw.split(',').map((n) => Number(n.trim()));
   if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
-    throw new Error('bbox debe tener el formato minLon,minLat,maxLon,maxLat');
+    throw new BadRequestException('bbox debe tener el formato minLon,minLat,maxLon,maxLat');
   }
   const [minLon, minLat, maxLon, maxLat] = parts;
+
+  // Fuera de rango PostGIS no falla: devuelve un envelope vacio y la consulta
+  // sale sin resultados, que se lee como "aqui no hay nada reportado" en vez de
+  // como "pediste mal".
+  if (
+    minLon < -180 || maxLon > 180 || minLat < -90 || maxLat > 90 ||
+    minLon > maxLon || minLat > maxLat
+  ) {
+    throw new BadRequestException('bbox fuera de rango o con las esquinas invertidas');
+  }
+
   return { minLon, minLat, maxLon, maxLat };
 }
