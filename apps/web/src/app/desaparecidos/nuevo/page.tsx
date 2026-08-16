@@ -106,24 +106,30 @@ export default function NuevoReportePage() {
         label: `Desaparición de ${fullName.trim()}`,
       });
 
-      // El id del reporte en el servidor es el mismo clientUuid, así que la foto
-      // se puede encolar aunque el reporte todavía no haya salido de este
-      // teléfono.
-      if (photo) {
-        await enqueuePhoto({
-          clientUuid: crypto.randomUUID(),
-          ownerType: 'MISSING_REPORT',
-          ownerId: clientUuid,
-          blob: photo,
-        });
-      }
-
+      // El claim token se guarda antes de encolar la foto: adjuntar una imagen
+      // exige demostrar que el reporte es tuyo, y esta copia local es la única
+      // que existe.
       if (created?.claimToken) {
         storeClaim({
           claimToken: created.claimToken,
           fullName: fullName.trim(),
           reportId: created.report.id,
           createdAt: new Date().toISOString(),
+          kind: 'MISSING',
+        });
+      }
+
+      // El id del reporte en el servidor es el mismo clientUuid, así que la foto
+      // se puede encolar aunque el reporte todavía no haya salido de este
+      // teléfono. Sin conexión todavía no hay token; la sincronización lo
+      // resuelve al vaciar la cola, cuando el reporte ya se envió.
+      if (photo) {
+        await enqueuePhoto({
+          clientUuid: crypto.randomUUID(),
+          ownerType: 'MISSING_REPORT',
+          ownerId: clientUuid,
+          blob: photo,
+          claimToken: created?.claimToken ?? undefined,
         });
       }
 

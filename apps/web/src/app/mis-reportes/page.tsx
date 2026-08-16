@@ -56,7 +56,10 @@ export default function MisReportesPage() {
   }, []);
 
   useEffect(() => {
-    const stored = getStoredClaims();
+    // Solo desapariciones. Un avistamiento también guarda su claim token —lo
+    // necesita para adjuntar su foto— pero esta pantalla consulta el seguimiento
+    // de un caso, y ese endpoint solo conoce reportes de desaparición.
+    const stored = getStoredClaims().filter((claim) => claim.kind !== 'SIGHTING');
     setClaims(stored);
     stored.forEach((claim) => void loadClaim(claim));
   }, [loadClaim]);

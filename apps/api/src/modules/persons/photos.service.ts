@@ -4,14 +4,18 @@ import {
   Logger,
   NotFoundException,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import sharp from 'sharp';
 import { Semaphore } from 'src/common/concurrency/semaphore';
+import { tokensMatch } from 'src/common/crypto/tokens';
 import { StorageService } from 'src/modules/storage/storage.service';
 import { StorageObjectNotFound } from 'src/modules/storage/storage.types';
+import { MissingPersonReport } from './entities/missing-person-report.entity';
+import { SightingReport } from './entities/sighting-report.entity';
 import { PersonPhoto } from './entities/person-photo.entity';
 import { PhotoOwnerType } from './persons.enums';
 
@@ -94,6 +98,10 @@ export class PhotosService {
   constructor(
     @InjectRepository(PersonPhoto)
     private readonly repo: Repository<PersonPhoto>,
+    @InjectRepository(MissingPersonReport)
+    private readonly missingRepo: Repository<MissingPersonReport>,
+    @InjectRepository(SightingReport)
+    private readonly sightingRepo: Repository<SightingReport>,
     private readonly storage: StorageService,
     private readonly config: ConfigService,
   ) {
@@ -125,7 +133,16 @@ export class PhotosService {
     clientUuid: string;
     ownerType: PhotoOwnerType;
     ownerId: string;
+    claimToken: string;
   }): Promise<PersonPhoto> {
+    // Lo primero, antes que nada: quién pregunta.
+    //
+    // Va delante del resto de comprobaciones a propósito. Después de esta línea
+    // el archivo entra al decodificador de imágenes, que es código nativo
+    // procesando bytes de un desconocido; no tiene por qué llegar ahí nadie que
+    // no haya demostrado ser dueño del reporte.
+    await this.assertOwnership(input.ownerType, input.ownerId, input.claimToken);
+
     if (!ALLOWED_MIME.has(input.file.mimetype)) {
       throw new BadRequestException(`Formato no admitido: ${input.file.mimetype}`);
     }
@@ -254,6 +271,50 @@ export class PhotosService {
         hasFace: null,
       }),
     );
+  }
+
+  /**
+   * Comprueba que quien sube la foto es quien creó el reporte.
+   *
+   * Hasta ahora este endpoint era público y aceptaba cualquier `ownerId`. Los
+   * identificadores de los reportes no son secretos —el listado público los
+   * devuelve en cada elemento—, así que cualquiera podía adjuntar la imagen que
+   * quisiera al caso de cualquier desaparecido, y esa imagen se publicaba junto
+   * a su nombre. En una plataforma donde la foto es lo que permite reconocer a
+   * una persona, poder cambiársela a otro es poder impedir que la encuentren.
+   *
+   * La credencial es el claim token que el servidor entregó una sola vez al
+   * crear el reporte. Se compara contra su hash y en tiempo constante, igual que
+   * en el resto del sistema.
+   *
+   * El error no distingue entre "el reporte no existe" y "el token no es el
+   * suyo": responder distinto convertiría este endpoint en una forma de
+   * averiguar qué identificadores corresponden a un caso real.
+   */
+  private async assertOwnership(
+    ownerType: PhotoOwnerType,
+    ownerId: string,
+    claimToken: string,
+  ): Promise<void> {
+    const noAutorizado = new UnauthorizedException(
+      'El token de seguimiento no corresponde a este reporte.',
+    );
+
+    // Se piden solo las dos columnas que hacen falta. Traer la fila entera
+    // descifraría documento, teléfono y correo en memoria para no mirarlos.
+    const owner =
+      ownerType === PhotoOwnerType.MISSING_REPORT
+        ? await this.missingRepo.findOne({
+            where: { id: ownerId },
+            select: { id: true, claimTokenHash: true },
+          })
+        : await this.sightingRepo.findOne({
+            where: { id: ownerId },
+            select: { id: true, claimTokenHash: true },
+          });
+
+    if (!owner?.claimTokenHash) throw noAutorizado;
+    if (!tokensMatch(claimToken, owner.claimTokenHash)) throw noAutorizado;
   }
 
   /** Aplica los ajustes de codificación de un formato a una tubería ya redimensionada. */
