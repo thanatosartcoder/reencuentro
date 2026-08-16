@@ -1,6 +1,12 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { blindIndex } from 'src/common/crypto/field-crypto';
 import { generateClaimToken, hashToken } from 'src/common/crypto/tokens';
 import { toGeoPoint } from 'src/common/geo/geo.util';
@@ -392,6 +398,102 @@ export class PersonsService {
     );
 
     return report;
+  }
+
+  // --------------------------------------------------------------------------
+  // Moderacion
+  // --------------------------------------------------------------------------
+
+  /**
+   * Retira un reporte de la vista publica.
+   *
+   * Existe porque cualquiera puede publicar, de forma anonima y sin revision, un
+   * reporte o un avistamiento con el nombre completo de una persona real, su
+   * descripcion fisica, una ubicacion y una foto. Los reportes de zona tenian
+   * moderacion desde el principio; estos no, y no habia forma de bajar una
+   * publicacion difamatoria sin escribir SQL contra produccion.
+   *
+   * Es borrado logico, no fisico. Un reporte retirado desaparece de todas las
+   * vistas —el listado, la busqueda, el enlace directo, el motor de
+   * coincidencias y la exportacion— pero la fila sigue ahi. Dos razones: si la
+   * retirada fue un error hay que poder deshacerla, y si el reporte era el de
+   * una desaparicion real, borrarlo de verdad seria destruir lo que una familia
+   * conto sobre su hija.
+   */
+  async retirarMissing(id: string, motivo: string): Promise<MissingPersonReport> {
+    const report = await this.missingRepo.findOne({ where: { id } });
+    if (!report) throw new NotFoundException('Reporte no encontrado');
+
+    // El motivo NO se guarda en el reporte. `resolutionNotes` es de quien lo
+    // creo —ahi escribe "aparecio, ya esta con nosotros"— y escribir encima
+    // borraria lo que dijo una familia sobre el final de su caso. El motivo vive
+    // en la bitacora, que ademas registra quien lo retiro, cuando y desde donde.
+    await this.missingRepo.softDelete(id);
+
+    // Los avisos pendientes de este caso dejan de tener sentido.
+    await this.notifications.cancelPendingFor(id);
+
+    this.logger.warn(`Reporte ${id} retirado de la vista publica: ${motivo}`);
+    return report;
+  }
+
+  /** Devuelve a la vista publica un reporte retirado por error. */
+  async restaurarMissing(id: string): Promise<MissingPersonReport> {
+    const report = await this.missingRepo.findOne({ where: { id }, withDeleted: true });
+    if (!report) throw new NotFoundException('Reporte no encontrado');
+    if (!report.deletedAt) throw new BadRequestException('Ese reporte no está retirado.');
+
+    await this.missingRepo.restore(id);
+    return report;
+  }
+
+  async retirarSighting(id: string, motivo: string): Promise<SightingReport> {
+    const sighting = await this.sightingRepo.findOne({ where: { id } });
+    if (!sighting) throw new NotFoundException('Avistamiento no encontrado');
+
+    // Igual que arriba: `notes` es de quien reporto el avistamiento, no un sitio
+    // donde el panel deje sus anotaciones.
+    await this.sightingRepo.softDelete(id);
+
+    this.logger.warn(`Avistamiento ${id} retirado de la vista publica: ${motivo}`);
+    return sighting;
+  }
+
+  async restaurarSighting(id: string): Promise<SightingReport> {
+    const sighting = await this.sightingRepo.findOne({ where: { id }, withDeleted: true });
+    if (!sighting) throw new NotFoundException('Avistamiento no encontrado');
+    if (!sighting.deletedAt) throw new BadRequestException('Ese avistamiento no está retirado.');
+
+    await this.sightingRepo.restore(id);
+    return sighting;
+  }
+
+  /**
+   * Lo retirado, para poder revisar y deshacer.
+   *
+   * Una moderacion que no se puede auditar ni revertir es su propio riesgo:
+   * retirar el reporte de una desaparicion real por error deja a una familia sin
+   * su caso y sin saber por que.
+   */
+  async listarRetirados(limit = 50): Promise<{
+    desaparecidos: MissingPersonReport[];
+    avistamientos: SightingReport[];
+  }> {
+    const [desaparecidos, avistamientos] = await Promise.all([
+      this.missingRepo.find({
+        where: { deletedAt: Not(IsNull()) },
+        withDeleted: true,
+        order: { deletedAt: 'DESC' },
+        take: limit,
+      }),
+      this.sightingRepo.find({
+        where: { deletedAt: Not(IsNull()) },
+        withDeleted: true,
+        order: { deletedAt: 'DESC' },
+        take: limit,
+      }),
+    ]);
+    return { desaparecidos, avistamientos };
   }
 
   /** Estadisticas para el tablero de situación. */

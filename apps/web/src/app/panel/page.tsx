@@ -10,6 +10,7 @@ import { DataSources } from '@/components/DataSources';
 import { Operators } from '@/components/Operators';
 import { Backups } from '@/components/Backups';
 import { Events } from '@/components/Events';
+import { Moderacion } from '@/components/Moderacion';
 
 const TOKEN_KEY = 'reencuentro.operatorToken';
 
@@ -352,6 +353,8 @@ function Queue({
       </p>
 
       <Events token={token} />
+
+      <Moderacion token={token} />
 
       <Operators token={token} />
 
