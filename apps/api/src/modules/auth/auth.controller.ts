@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
+import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
 import { AuthService, OperatorClaims } from './auth.service';
 import { AllowPendingPassword, CurrentOperator, OperatorGuard } from './auth.guard';
 import { AuditService } from 'src/modules/audit/audit.service';
@@ -12,6 +13,11 @@ export class LoginDto {
 
   @IsString()
   @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
+  // El tope evita pagar un hash de bcrypt sobre una entrada de megabytes. Con el
+  // cuerpo JSON admitiendo 5 MB, una ráfaga de intentos con contraseñas enormes
+  // es una forma barata de quemar la CPU que atiende los reportes. Coincide con
+  // el máximo de la política de contraseñas.
+  @MaxLength(200, { message: 'La contraseña es demasiado larga' })
   password: string;
 }
 
@@ -33,8 +39,21 @@ export class AuthController {
     private readonly audit: AuditService,
   ) {}
 
-  /** Acceso al panel de validación. Solo para personal acreditado. */
+  /**
+   * Acceso al panel de validación. Solo para personal acreditado.
+   *
+   * Lleva un límite propio y mucho más bajo que el general. El del resto del
+   * sistema es alto a propósito —en una emergencia hay picos legítimos desde una
+   * misma IP— pero ese razonamiento no aplica aquí: nadie inicia sesión
+   * trescientas veces por minuto, y sin un límite propio esta ruta era una
+   * puerta abierta a probar contraseñas y, de paso, a quemar la CPU del servidor
+   * un hash de bcrypt por intento.
+   *
+   * Diez por minuto deja margen para equivocarse escribiendo incluso a varias
+   * personas compartiendo la conexión de un albergue.
+   */
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto.email, dto.password);
   }
