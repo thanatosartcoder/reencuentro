@@ -55,8 +55,12 @@ jobs:
       # que devuelve dice dónde duele, y eso no puede ser público.
       - name: Estado operativo
         id: estado
+        # Por el mismo motivo que abajo: la llave llega por el entorno en vez de
+        # pegarse dentro de la línea de comandos antes de ejecutarla.
+        env:
+          MONITOR_KEY: ${{ secrets.MONITOR_KEY }}
         run: |
-          BODY=$(curl -sS -m 30 -H "x-monitor-key: ${{ secrets.MONITOR_KEY }}" \
+          BODY=$(curl -sS -m 30 -H "x-monitor-key: $MONITOR_KEY" \
                    "$API/api/estado-operativo") || BODY=''
           echo "$BODY" > estado.json
 
@@ -65,10 +69,16 @@ jobs:
             exit 0
           fi
 
+          # El texto se sanea antes de escribirlo. Viene de la respuesta de la
+          # API, y `echo "clave=$VALOR" >> $GITHUB_OUTPUT` toma cada salto de
+          # línea como el final del valor: un `\n` en el mensaje permite
+          # inventarse outputs que este job no declaró. Se aplanan los saltos y
+          # se acota la longitud.
           PROBLEMAS=$(python3 -c "
           import json
           d = json.load(open('estado.json'))
-          print(' · '.join(d.get('problemas', [])))
+          texto = ' · '.join(str(p) for p in d.get('problemas', []))
+          print(' '.join(texto.split())[:500])
           ")
           [ -n "$PROBLEMAS" ] && echo "fallo=$PROBLEMAS" >> "$GITHUB_OUTPUT"
           python3 -c "
@@ -81,15 +91,25 @@ jobs:
 
       - name: Avisar o cerrar el aviso
         uses: actions/github-script@v7
+        # Los mensajes llegan por el entorno, no interpolados en el script.
+        #
+        # Con `${{ ... }}` el valor se pega dentro del JavaScript *antes* de
+        # ejecutarlo, así que deja de ser un dato y pasa a ser código. Uno de
+        # estos textos procede de la respuesta HTTP de la API: si esa respuesta
+        # se pudiera influir, se estaría ejecutando texto ajeno en un job con
+        # permiso de escritura sobre los issues del repositorio. Por el entorno
+        # es una cadena y solo puede ser una cadena.
+        env:
+          FALLO_WEB: ${{ steps.web.outputs.fallo }}
+          FALLO_API: ${{ steps.api.outputs.fallo }}
+          FALLO_ESTADO: ${{ steps.estado.outputs.fallo }}
         with:
           script: |
             const fallos = [
-              `${{ toJSON(steps.web.outputs.fallo) }}`,
-              `${{ toJSON(steps.api.outputs.fallo) }}`,
-              `${{ toJSON(steps.estado.outputs.fallo) }}`,
-            ]
-              .map((f) => f.replace(/^"|"$/g, ''))
-              .filter((f) => f && f !== 'null' && f !== '');
+              process.env.FALLO_WEB,
+              process.env.FALLO_API,
+              process.env.FALLO_ESTADO,
+            ].filter((f) => f && f !== 'null' && f.trim() !== '');
 
             const TITULO = 'Vigilancia: producción con problemas';
             const { owner, repo } = context.repo;
