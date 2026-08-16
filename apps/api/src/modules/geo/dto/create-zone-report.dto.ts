@@ -150,6 +150,20 @@ export class VoteZoneReportDto {
   @MaxLength(64)
   deviceId: string;
 
+  /**
+   * Credencial emitida por `POST /mapa/dispositivos`.
+   *
+   * Va en el cuerpo y no en una cabecera a proposito: un voto emitido sin señal
+   * espera en el outbox y se envia despues dentro de un lote de `/sync/push`,
+   * que no lleva cabeceras por operacion. En cabecera, quien vota desde una zona
+   * sin cobertura quedaria siempre sin verificar — justo la persona para la que
+   * existe el modo sin conexion.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  deviceToken?: string;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => GeoPointDto)

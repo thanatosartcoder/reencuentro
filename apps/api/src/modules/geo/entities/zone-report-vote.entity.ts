@@ -41,6 +41,16 @@ export class ZoneReportVote {
   @Column({ type: 'varchar', length: 64 })
   deviceId: string;
 
+  /**
+   * Si el `deviceId` venia firmado por el servidor.
+   *
+   * Un voto sin firma cuenta como senal de la comunidad pero no baja la
+   * confianza: si lo hiciera, inventarse identificadores bastaria para esconder
+   * del mapa una via cortada.
+   */
+  @Column({ type: 'boolean', default: false })
+  verified: boolean;
+
   @Column({ type: 'enum', enum: ReporterRole, default: ReporterRole.CITIZEN })
   voterRole: ReporterRole;
 

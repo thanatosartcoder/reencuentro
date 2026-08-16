@@ -108,6 +108,19 @@ export class ZoneReport extends SyncableEntity {
   refutations: number;
 
   /**
+   * Votos de dispositivos sin credencial del servidor.
+   *
+   * Se guardan aparte y NO entran en la formula de confianza. Siguen siendo
+   * informacion —dicen que alguien mas paso por ahi— pero no pueden esconder un
+   * reporte, que es lo que ocurria cuando el `deviceId` lo elegia el cliente.
+   */
+  @Column({ type: 'int', default: 0 })
+  unverifiedConfirmations: number;
+
+  @Column({ type: 'int', default: 0 })
+  unverifiedRefutations: number;
+
+  /**
    * Ultima vez que alguien confirmo. La confianza decae desde esta fecha, no
    * desde la creacion: una confirmacion reciente "refresca" el reporte igual
    * que en Waze.
