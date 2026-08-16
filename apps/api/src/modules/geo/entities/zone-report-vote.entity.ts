@@ -51,6 +51,10 @@ export class ZoneReportVote {
   @Column({ type: 'boolean', default: false })
   verified: boolean;
 
+  /** Si quien voto tenia sesion en el panel. Ver `accreditedRefutations`. */
+  @Column({ type: 'boolean', default: false })
+  accredited: boolean;
+
   @Column({ type: 'enum', enum: ReporterRole, default: ReporterRole.CITIZEN })
   voterRole: ReporterRole;
 

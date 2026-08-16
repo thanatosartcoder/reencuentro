@@ -114,6 +114,15 @@ export class ZoneReport extends SyncableEntity {
    * informacion —dicen que alguien mas paso por ahi— pero no pueden esconder un
    * reporte, que es lo que ocurria cuando el `deviceId` lo elegia el cliente.
    */
+  /**
+   * Refutaciones de personal acreditado.
+   *
+   * Se cuentan aparte porque son las unicas —junto al paso del tiempo— que
+   * pueden retirar un peligro del mapa. Ver el suelo en `confidenceSql`.
+   */
+  @Column({ type: 'int', default: 0 })
+  accreditedRefutations: number;
+
   @Column({ type: 'int', default: 0 })
   unverifiedConfirmations: number;
 

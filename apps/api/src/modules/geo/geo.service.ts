@@ -82,9 +82,10 @@ const MAX_CONFIRMATIONS_COUNTED = 8;
  * acreditado (0.9) ya no se puede ocultar por esta vía en absoluto: con el tope
  * de 8 refutaciones contadas, el suelo queda en 0.26, por encima del umbral.
  *
- * Sigue sin ser una defensa real —el `deviceId` se sigue inventando— pero
- * convierte un ataque de dos peticiones en uno que necesita volumen y deja
- * rastro.
+ * Ese peso ya no es lo único que sostiene el mapa: `SUELO_COMUNIDAD`, más abajo,
+ * impide que las refutaciones de la comunidad hagan desaparecer un peligro por
+ * muchas que sean. El peso decide cuánta credibilidad pierde un reporte camino
+ * de ese suelo; el suelo decide que ahí se para.
  *
  * Lo que sí sigue retirando información obsoleta es el decaimiento por tiempo:
  * un reporte que nadie vuelve a confirmar se desvanece solo.
@@ -103,6 +104,32 @@ export const MAX_REFUTATIONS_COUNTED = 8;
 export const DEFAULT_MIN_CONFIDENCE = 0.15;
 
 /**
+ * Suelo por debajo del cual la comunidad no puede empujar un reporte.
+ *
+ * La regla, en una frase: **nada anónimo puede hacer desaparecer un peligro del
+ * mapa; solo puede añadirlo, corroborarlo o restarle credibilidad hasta aquí.**
+ * Retirarlo antes de tiempo solo pueden el decaimiento y el personal acreditado.
+ *
+ * Sale del coste asimétrico que este archivo ya reconoce en el peso de las
+ * refutaciones: marcar como bloqueada una vía abierta desvía una ambulancia,
+ * pero marcarla como abierta la manda contra un derrumbe. Firmar el voto
+ * encareció fabricar identidades —hacen falta muchas peticiones desde muchas
+ * IPs, y quedan registradas— pero no lo impidió. Esto le quita al ataque su
+ * premio: por muchas identidades que se fabriquen, el peligro sigue en el mapa.
+ *
+ * El valor es el doble del umbral de visibilidad, y esa relación es lo que se
+ * está eligiendo: como el umbral se compara **después** del decaimiento, un
+ * reporte hundido hasta el suelo conserva exactamente una vida media de
+ * visibilidad. Seis horas una vía cortada, cuarenta y ocho un puente caído — el
+ * tiempo que el propio tipo de peligro declara que merece. La comunidad puede
+ * acortar la vida de un reporte hasta ese mínimo, nunca por debajo.
+ *
+ * El suelo nunca sube nada: si la credibilidad ya está por debajo porque la bajó
+ * un operador o porque el reporte nació con poca, se queda donde está.
+ */
+export const SUELO_COMUNIDAD = 2 * DEFAULT_MIN_CONFIDENCE;
+
+/**
  * Expresión SQL de la confianza vigente.
  *
  * Se calcula en la base y no en el servidor por dos razones: permite filtrar y
@@ -117,13 +144,32 @@ export const DEFAULT_MIN_CONFIDENCE = 0.15;
  *
  * `prefix` permite reutilizar la misma fórmula en un SELECT con alias y en un
  * UPDATE sin alias, en vez de mantener dos copias que pueden divergir.
+ *
+ * ## Las dos credibilidades
+ *
+ * Se calculan por separado porque no pueden lo mismo. La **acreditada** —base,
+ * confirmaciones y refutaciones de personal con cuenta— puede llevar un reporte
+ * a cero. La de la comunidad resta sobre ella, pero topa en `SUELO_COMUNIDAD`:
+ * por muchas identidades que alguien fabrique, el peligro sigue en el mapa.
+ *
+ * El `LEAST(acreditada, SUELO)` del segundo término es lo que impide que el
+ * suelo *suba* nada: si la acreditada ya está por debajo, ahí se queda.
  */
 function confidenceSql(prefix: string): string {
+  const acreditada = `(
+    ${prefix}"baseConfidence"
+      + ${CONFIRMATION_WEIGHT} * LEAST(${prefix}"confirmations", ${MAX_CONFIRMATIONS_COUNTED})
+      - ${REFUTATION_WEIGHT} * LEAST(${prefix}"accreditedRefutations", ${MAX_REFUTATIONS_COUNTED})
+  )`;
+
+  const conComunidad = `(
+    ${acreditada}
+      - ${REFUTATION_WEIGHT} * LEAST(${prefix}"refutations", ${MAX_REFUTATIONS_COUNTED})
+  )`;
+
   return `
     GREATEST(0, LEAST(1,
-      ${prefix}"baseConfidence"
-        + ${CONFIRMATION_WEIGHT} * LEAST(${prefix}"confirmations", ${MAX_CONFIRMATIONS_COUNTED})
-        - ${REFUTATION_WEIGHT} * LEAST(${prefix}"refutations", ${MAX_REFUTATIONS_COUNTED})
+      GREATEST(${conComunidad}, LEAST(${acreditada}, ${SUELO_COMUNIDAD}))
     ))
     * POWER(2, -(EXTRACT(EPOCH FROM (now() - ${prefix}"lastConfirmedAt")) / 60.0) / NULLIF(${prefix}"halfLifeMinutes", 0))
   `;
@@ -245,7 +291,8 @@ export class GeoService {
     // creerle. Una sesion de operador vale igual: quien tiene cuenta ya es
     // alguien.
     const deviceIdFirmado = verificarTokenDeDispositivo(dto.deviceToken);
-    const verificado = Boolean(deviceIdFirmado) || Boolean(acreditadoPor);
+    const acreditado = Boolean(acreditadoPor);
+    const verificado = Boolean(deviceIdFirmado) || acreditado;
     const deviceId = deviceIdFirmado ?? acreditadoPor?.sub ?? dto.deviceId;
     return this.dataSource.transaction(async (manager) => {
       const report = await manager.findOne(ZoneReport, { where: { id: reportId } });
@@ -272,6 +319,8 @@ export class GeoService {
         if (previous.vote === VoteKind.CONFIRM) {
           if (previous.verified) report.confirmations = menos(report.confirmations);
           else report.unverifiedConfirmations = menos(report.unverifiedConfirmations);
+        } else if (previous.accredited) {
+          report.accreditedRefutations = menos(report.accreditedRefutations);
         } else if (previous.verified) {
           report.refutations = menos(report.refutations);
         } else {
@@ -283,6 +332,7 @@ export class GeoService {
         previous.comment = dto.comment ?? null;
         previous.voterRole = dto.voterRole ?? previous.voterRole;
         previous.verified = verificado;
+        previous.accredited = acreditado;
         await manager.save(previous);
       } else {
         await manager.save(
@@ -292,6 +342,7 @@ export class GeoService {
             vote: dto.vote,
             deviceId,
             verified: verificado,
+            accredited: acreditado,
             voterRole: dto.voterRole ?? ReporterRole.CITIZEN,
             location,
             comment: dto.comment ?? null,
@@ -309,6 +360,9 @@ export class GeoService {
         } else {
           report.unverifiedConfirmations += 1;
         }
+      } else if (acreditado) {
+        // La unica refutacion que puede retirar un peligro del mapa.
+        report.accreditedRefutations += 1;
       } else if (verificado) {
         report.refutations += 1;
       } else {
@@ -339,13 +393,12 @@ export class GeoService {
       // otro lo elige el propio cliente. Cerrarlo pide distinguir voto
       // verificado de no verificado, y eso son columnas nuevas y una decisión
       // sobre cómo se acredita un dispositivo.
-      const acreditado = Boolean(acreditadoPor);
       if (
         acreditado &&
         dto.vote === VoteKind.REFUTE &&
         verificado &&
-        report.refutations >= 3 &&
-        report.refutations > report.confirmations
+        report.accreditedRefutations >= 3 &&
+        report.accreditedRefutations > report.confirmations
       ) {
         report.status = ZoneReportStatus.RESOLVED;
         report.resolutionNotes = 'Cerrado por refutaciones, confirmado por personal acreditado';
