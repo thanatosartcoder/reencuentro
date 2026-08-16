@@ -86,6 +86,28 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Si tienes una emergencia en curso, llama al <strong className="num">123</strong>.
               Esta plataforma no reemplaza a las líneas de atención.
             </p>
+            {/* La Cruz Roja tiene búsqueda real y acceso a la red del
+                Movimiento. Quien llegue aquí por su cuenta debe poder llegar
+                allá aunque nunca lea nada más de este sitio. */}
+            <p className="mt-3">
+              Para buscar a una persona desaparecida, la <strong>Cruz Roja Colombiana</strong>{' '}
+              tiene activo su servicio de Restablecimiento del Contacto Familiar:{' '}
+              <a
+                href="https://wa.me/573212139525"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="num underline underline-offset-2"
+              >
+                +57 321 213 9525
+              </a>{' '}
+              ·{' '}
+              <a
+                href="mailto:rcf@cruzrojacolombiana.org"
+                className="underline underline-offset-2"
+              >
+                rcf@cruzrojacolombiana.org
+              </a>
+            </p>
             <p className="mt-3 text-ink-faint">
               Los datos personales se tratan conforme a la Ley 1581 de 2012. Las fotos y los
               datos de contacto se guardan cifrados y su consulta queda registrada.{' '}
