@@ -9,8 +9,15 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
-import { CurrentOperator, OperatorGuard, Roles } from 'src/modules/auth/auth.guard';
+import {
+  CurrentOperator,
+  MaybeOperator,
+  OperatorGuard,
+  OptionalOperatorGuard,
+  Roles,
+} from 'src/modules/auth/auth.guard';
 import { OperatorClaims } from 'src/modules/auth/auth.service';
 import { OperatorRole } from 'src/modules/auth/entities/operator.entity';
 import { AuditService } from 'src/modules/audit/audit.service';
@@ -64,19 +71,40 @@ export class GeoController {
     return this.geo.findById(id);
   }
 
-  /** Crea un reporte. Idempotente por `clientUuid`; 200 en lugar de 201. */
+  /**
+   * Crea un reporte. Idempotente por `clientUuid`; 200 en lugar de 201.
+   *
+   * Sigue siendo público: exigir cuenta para avisar de un derrumbe es perder el
+   * aviso. El guard opcional no decide quién puede reportar, solo si el rol que
+   * la persona declaró se puede respaldar con una cuenta del panel.
+   */
   @Post('reportes')
   @HttpCode(200)
-  async create(@Body() dto: CreateZoneReportDto) {
-    const { report, duplicate } = await this.geo.createReport(dto);
+  @UseGuards(OptionalOperatorGuard)
+  async create(@Body() dto: CreateZoneReportDto, @MaybeOperator() operator?: OperatorClaims) {
+    const { report, duplicate } = await this.geo.createReport(dto, operator);
     return { duplicate, report: await this.geo.findById(report.id) };
   }
 
-  /** "Sigue así" / "ya no". */
+  /**
+   * "Sigue así" / "ya no".
+   *
+   * Con límite propio y bajo. El general es alto a propósito para no bloquear a
+   * quien reporta durante un pico, pero votar no tiene picos legítimos: nadie
+   * confirma treinta reportes en un minuto. Lo que sí cabía en ese margen era
+   * enterrar una vía cortada a base de refutaciones desde identificadores de
+   * dispositivo inventados.
+   */
   @Post('reportes/:id/voto')
   @HttpCode(200)
-  async vote(@Param('id', ParseUUIDPipe) id: string, @Body() dto: VoteZoneReportDto) {
-    await this.geo.vote(id, dto);
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @UseGuards(OptionalOperatorGuard)
+  async vote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VoteZoneReportDto,
+    @MaybeOperator() operator?: OperatorClaims,
+  ) {
+    await this.geo.vote(id, dto, operator);
     return this.geo.findById(id);
   }
 

@@ -5,7 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Operator } from './entities/operator.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { OperatorGuard } from './auth.guard';
+import { OperatorGuard, OptionalOperatorGuard } from './auth.guard';
 import { OperatorsService } from './operators.service';
 import { OperatorsController } from './operators.controller';
 
@@ -29,7 +29,7 @@ import { OperatorsController } from './operators.controller';
     }),
   ],
   controllers: [AuthController, OperatorsController],
-  providers: [AuthService, OperatorGuard, OperatorsService],
-  exports: [AuthService, OperatorGuard, OperatorsService, JwtModule],
+  providers: [AuthService, OperatorGuard, OptionalOperatorGuard, OperatorsService],
+  exports: [AuthService, OperatorGuard, OptionalOperatorGuard, OperatorsService, JwtModule],
 })
 export class AuthModule {}
