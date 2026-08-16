@@ -10,6 +10,7 @@ import {
   NotificationStatus,
 } from './notifications.enums';
 import { RealtimeGateway, claimRoom } from './realtime.gateway';
+import { FcmClient, TokenMuerto, leerCuentaDeServicio } from './fcm.client';
 
 export interface EnqueueNotificationInput {
   kind: NotificationKind;
@@ -33,11 +34,14 @@ const MAX_ATTEMPTS = 8;
  * volvía a mirar cada quince segundos durante horas — trabajo constante para
  * entregar cero mensajes, y ruido que tapa los fallos que sí importan.
  */
-class EntregaImposible extends Error {}
+export class EntregaImposible extends Error {}
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+
+  /** `undefined` = sin construir todavia; `null` = no hay proveedor configurado. */
+  private fcmClient: FcmClient | null | undefined = undefined;
 
   constructor(
     @InjectRepository(NotificationOutbox)
@@ -191,26 +195,24 @@ export class NotificationsService {
   }
 
   /**
-   * Envio push. Requiere FCM_SERVER_KEY configurada; sin proveedor la
-   * notificacion se marca como fallida en lugar de fingir que salio.
+   * Envio push por FCM HTTP v1.
    *
-   * PENDIENTE: esto habla con la API legacy de FCM (`/fcm/send` con
-   * `Authorization: key=...`), que Google retiró. Tal como está, **ningún push
-   * sale**: el servidor responde 4xx y la notificacion muere. El canal
-   * WebSocket sigue funcionando, así que quien tiene la pantalla abierta se
-   * entera y el fallo pasa desapercibido — que es justo lo que lo hace
-   * peligroso, porque el push es el canal para quien *no* está mirando.
+   * Antes esto hablaba con la API legacy (`/fcm/send` con `Authorization:
+   * key=...`), que Google retiro: **ningun push salia**. El fallo pasaba
+   * desapercibido porque el canal WebSocket si funciona, y ese es justo el
+   * problema — el push existe para quien *no* tiene la pantalla abierta.
    *
-   * Migrar a FCM HTTP v1 no es un cambio de URL: exige una cuenta de servicio,
-   * firmar un JWT y pedir un token OAuth2 por cada tanda. Queda anotado aparte
-   * porque es una función, no un parche.
+   * La v1 envia un mensaje por token, no un lote, asi que esto recorre los
+   * dispositivos. La fila del outbox se da por entregada si **al menos uno**
+   * recibio: para quien espera noticias de un familiar, que le llegue al
+   * telefono aunque falle la tablet es entrega, no fallo parcial.
    */
   private async deliverPush(notification: NotificationOutbox): Promise<void> {
-    const serverKey = process.env.FCM_SERVER_KEY;
-    if (!serverKey) {
+    const fcm = this.fcm();
+    if (!fcm) {
       // Sin proveedor no hay reintento que valga: la variable no va a aparecer
       // sola dentro de media hora.
-      throw new EntregaImposible('FCM_SERVER_KEY no configurada');
+      throw new EntregaImposible('FCM_SERVICE_ACCOUNT no configurada');
     }
 
     const devices = await this.deviceRepo
@@ -220,37 +222,69 @@ export class NotificationsService {
       .getMany();
 
     if (!devices.length) {
-      // El caso más común, no una anomalía: quien reporta desde el navegador
+      // El caso mas comun, no una anomalia: quien reporta desde el navegador
       // suele no registrar push, y le llega el aviso por el canal WebSocket y
-      // por la pantalla "Mis reportes". Que esta fila muera aquí es lo correcto.
+      // por la pantalla "Mis reportes". Que esta fila muera aqui es lo correcto.
       throw new EntregaImposible('Sin dispositivos registrados para este destinatario');
     }
 
-    const tokens = devices.map((d) => d.pushToken).filter((t): t is string => Boolean(t));
+    let entregados = 0;
+    let transitorio: string | null = null;
 
-    const response = await fetch('https://fcm.googleapis.com/fcm/send', {
-      method: 'POST',
-      headers: {
-        Authorization: `key=${serverKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        registration_ids: tokens,
-        notification: { title: notification.title, body: notification.body },
-        data: { kind: notification.kind, ...notification.payload },
-        priority: 'high',
-      }),
-    });
-
-    if (!response.ok) {
-      const detalle = `FCM respondió ${response.status}: ${await response.text()}`;
-      // 4xx es un rechazo del contenido o de la credencial: repetirlo da lo
-      // mismo. Solo se reintenta lo que puede cambiar por sí solo (5xx, red).
-      if (response.status >= 400 && response.status < 500) {
-        throw new EntregaImposible(detalle);
+    for (const device of devices) {
+      if (!device.pushToken) continue;
+      try {
+        await fcm.enviar({
+          token: device.pushToken,
+          titulo: notification.title,
+          cuerpo: notification.body,
+          datos: { kind: notification.kind, ...(notification.payload ?? {}) } as Record<
+            string,
+            string
+          >,
+        });
+        entregados++;
+      } catch (error) {
+        if (error instanceof TokenMuerto) {
+          // El telefono se desinstalo la aplicacion o cambio de token. Se limpia
+          // para dejar de intentarlo en cada aviso futuro, no solo en este.
+          await this.deviceRepo.update(device.id, { pushToken: null });
+          this.logger.debug(`Token de push retirado del dispositivo ${device.deviceId}`);
+          continue;
+        }
+        transitorio = error instanceof Error ? error.message : String(error);
       }
-      throw new Error(detalle);
     }
+
+    if (entregados > 0) return;
+
+    // Nadie recibio. Si hubo un fallo que puede pasarse solo —red, 5xx— se
+    // reintenta; si todos los tokens estaban muertos, no hay a quien enviar.
+    if (transitorio) throw new Error(transitorio);
+    throw new EntregaImposible('Ningun dispositivo del destinatario tiene un token valido');
+  }
+
+  /**
+   * Cliente de FCM, construido una sola vez.
+   *
+   * Perezoso y no en el constructor para que una cuenta de servicio mal formada
+   * no impida arrancar la API entera: el push es opcional, los reportes no.
+   */
+  private fcm(): FcmClient | null {
+    if (this.fcmClient !== undefined) return this.fcmClient;
+
+    try {
+      const cuenta = leerCuentaDeServicio(process.env.FCM_SERVICE_ACCOUNT);
+      this.fcmClient = cuenta ? new FcmClient(cuenta) : null;
+    } catch (error) {
+      this.logger.error(
+        `FCM mal configurado, el push queda desactivado: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      this.fcmClient = null;
+    }
+    return this.fcmClient;
   }
 
   /** Registra o actualiza un dispositivo y lo asocia a un claim token. */
