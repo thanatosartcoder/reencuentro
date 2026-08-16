@@ -8,13 +8,27 @@ function bool(value: string | undefined, fallback = false): boolean {
   return value === 'true' || value === '1';
 }
 
+/**
+ * Orígenes admitidos, leídos en el momento de usarlos.
+ *
+ * Se exporta como función y no como constante porque el gateway de WebSocket la
+ * consulta por conexión: sus opciones se fijan al importar el módulo, y en ese
+ * instante `dotenv` puede no haber cargado todavía. Leerlo tarde evita que la
+ * lista quede vacía por un problema de orden de arranque — que aquí se
+ * traduciría en rechazar a todo el mundo o, peor, en tener que aflojar la regla
+ * para que funcione.
+ */
+export function corsOrigins(): string[] {
+  return (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export const configuration = () => ({
   port: int(process.env.PORT, 4000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
-  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
+  corsOrigins: corsOrigins(),
 
   database: {
     host: process.env.DB_HOST ?? 'localhost',
