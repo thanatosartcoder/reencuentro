@@ -20,7 +20,7 @@ import { MapLegend } from '@/components/MapLegend';
 import { RoadNamePicker } from '@/components/RoadNamePicker';
 import { AftershockDetail, DamageDetail, MunicipalityDetail } from '@/components/MapDetails';
 import { getCachedZones, cacheZones } from '@/lib/outbox';
-import { getDeviceId } from '@/lib/device';
+import { getDeviceId, getDeviceToken } from '@/lib/device';
 import { LAYER_LABELS, zoneColor } from '@/lib/zone-style';
 import { DecayMeter, timeAgo } from '@/components/DecayMeter';
 
@@ -638,6 +638,9 @@ function ZoneDetail({
     setBusy(true);
     setMessage(null);
     try {
+      // Se pide antes de encolar para que el voto la lleve también sin señal:
+      // el outbox guarda el payload entero, credencial incluida.
+      const deviceToken = await getDeviceToken();
       const { queued } = await submit({
         path: `/mapa/reportes/${zone.id}/voto`,
         type: 'ZONE_VOTE',
@@ -647,6 +650,7 @@ function ZoneDetail({
           clientUuid: crypto.randomUUID(),
           vote: kind,
           deviceId: getDeviceId(),
+          deviceToken,
         },
         label: `${kind === 'CONFIRM' ? 'Confirmación' : 'Refutación'} · ${zone.label}`,
       });

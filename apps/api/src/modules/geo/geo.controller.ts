@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { emitirTokenDeDispositivo } from 'src/common/crypto/device-token';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import {
   CurrentOperator,
@@ -42,6 +43,26 @@ export class GeoController {
     private readonly geo: GeoService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Emite una credencial anónima de dispositivo.
+   *
+   * No pide nada ni identifica a nadie: devuelve un número al azar firmado por
+   * el servidor. Existe porque hasta ahora el `deviceId` que separaba a un
+   * votante de otro lo elegía el propio cliente, así que inventárselo bastaba
+   * para votar tantas veces como se quisiera.
+   *
+   * El límite por IP es lo que le da valor a la firma: firmar no impide fabricar
+   * identidades, impide fabricarlas gratis y sin pasar por aquí. Veinte a la
+   * hora deja margen de sobra a un albergue con la conexión compartida y quita
+   * de en medio el bucle de tres líneas desde una consola.
+   */
+  @Post('dispositivos')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 20, ttl: 3_600_000 } })
+  emitirDispositivo() {
+    return emitirTokenDeDispositivo();
+  }
 
   /** Catálogo de tipos de reporte con su vida media y su capa. */
   @Get('tipos')

@@ -1,4 +1,5 @@
 const DEVICE_KEY = 'reencuentro.deviceId';
+const DEVICE_TOKEN_KEY = 'reencuentro.deviceToken';
 const CLAIMS_KEY = 'reencuentro.claimTokens';
 
 /**
@@ -62,4 +63,34 @@ export function storeClaim(claim: StoredClaim): void {
   const claims = getStoredClaims();
   if (claims.some((c) => c.claimToken === claim.claimToken)) return;
   localStorage.setItem(CLAIMS_KEY, JSON.stringify([claim, ...claims]));
+}
+
+/**
+ * Credencial de dispositivo firmada por el servidor, para votar en el mapa.
+ *
+ * El `deviceId` de arriba lo genera este teléfono, así que el servidor no puede
+ * distinguirlo de uno inventado: bastaba con mandar identificadores distintos
+ * para votar muchas veces y enterrar del mapa una vía cortada. Esta credencial
+ * la emite el servidor y va firmada.
+ *
+ * Se pide una sola vez y se guarda. Si no hay señal cuando toca pedirla, el voto
+ * sale igual pero sin verificar: contará como señal de la comunidad y no bajará
+ * la confianza. Es mejor eso que perder el voto de quien está en el sitio.
+ */
+export async function getDeviceToken(): Promise<string | undefined> {
+  if (typeof window === 'undefined') return undefined;
+
+  const guardado = localStorage.getItem(DEVICE_TOKEN_KEY);
+  if (guardado) return guardado;
+
+  try {
+    const respuesta = await fetch('/api/mapa/dispositivos', { method: 'POST' });
+    if (!respuesta.ok) return undefined;
+    const { deviceToken } = (await respuesta.json()) as { deviceToken?: string };
+    if (deviceToken) localStorage.setItem(DEVICE_TOKEN_KEY, deviceToken);
+    return deviceToken;
+  } catch {
+    // Sin conexión. El voto se encola igual y viajará sin credencial.
+    return undefined;
+  }
 }

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DataSource, Repository } from 'typeorm';
 import { parseBbox, toGeoPoint } from 'src/common/geo/geo.util';
+import { verificarTokenDeDispositivo } from 'src/common/crypto/device-token';
 import { ReporterRole } from 'src/modules/persons/persons.enums';
 import { RealtimeGateway } from 'src/modules/notifications/realtime.gateway';
 import { EventsService } from 'src/modules/events/events.service';
@@ -238,12 +239,20 @@ export class GeoService {
     dto: VoteZoneReportDto,
     acreditadoPor?: { sub: string },
   ): Promise<ZoneReport> {
+    // El identificador de dispositivo se toma del token firmado, no del cuerpo.
+    // Ese era el fallo de raiz: el campo `deviceId` lo elegia quien votaba, asi
+    // que la deduplicacion consistia en preguntarle al votante quien era y
+    // creerle. Una sesion de operador vale igual: quien tiene cuenta ya es
+    // alguien.
+    const deviceIdFirmado = verificarTokenDeDispositivo(dto.deviceToken);
+    const verificado = Boolean(deviceIdFirmado) || Boolean(acreditadoPor);
+    const deviceId = deviceIdFirmado ?? acreditadoPor?.sub ?? dto.deviceId;
     return this.dataSource.transaction(async (manager) => {
       const report = await manager.findOne(ZoneReport, { where: { id: reportId } });
       if (!report) throw new NotFoundException('Reporte de zona no encontrado');
 
       const previous = await manager.findOne(ZoneReportVote, {
-        where: { zoneReportId: reportId, deviceId: dto.deviceId },
+        where: { zoneReportId: reportId, deviceId },
       });
 
       if (previous?.vote === dto.vote) {
@@ -257,14 +266,23 @@ export class GeoService {
         : null;
 
       if (previous) {
-        // Cambio de opinión: se revierte el voto anterior antes de aplicar el nuevo.
-        if (previous.vote === VoteKind.CONFIRM) report.confirmations = Math.max(0, report.confirmations - 1);
-        else report.refutations = Math.max(0, report.refutations - 1);
+        // Cambio de opinión: se revierte el voto anterior antes de aplicar el
+        // nuevo, en el contador que le corresponda según estuviera verificado.
+        const menos = (n: number) => Math.max(0, n - 1);
+        if (previous.vote === VoteKind.CONFIRM) {
+          if (previous.verified) report.confirmations = menos(report.confirmations);
+          else report.unverifiedConfirmations = menos(report.unverifiedConfirmations);
+        } else if (previous.verified) {
+          report.refutations = menos(report.refutations);
+        } else {
+          report.unverifiedRefutations = menos(report.unverifiedRefutations);
+        }
 
         previous.vote = dto.vote;
         previous.location = location;
         previous.comment = dto.comment ?? null;
         previous.voterRole = dto.voterRole ?? previous.voterRole;
+        previous.verified = verificado;
         await manager.save(previous);
       } else {
         await manager.save(
@@ -272,7 +290,8 @@ export class GeoService {
             clientUuid: dto.clientUuid,
             zoneReportId: reportId,
             vote: dto.vote,
-            deviceId: dto.deviceId,
+            deviceId,
+            verified: verificado,
             voterRole: dto.voterRole ?? ReporterRole.CITIZEN,
             location,
             comment: dto.comment ?? null,
@@ -280,11 +299,20 @@ export class GeoService {
         );
       }
 
+      // Solo los votos verificados entran en la formula de confianza. Un voto
+      // anonimo sigue contandose y mostrandose —dice que alguien mas paso por
+      // ahi— pero no puede esconder un reporte del mapa.
       if (dto.vote === VoteKind.CONFIRM) {
-        report.confirmations += 1;
-        report.lastConfirmedAt = new Date();
-      } else {
+        if (verificado) {
+          report.confirmations += 1;
+          report.lastConfirmedAt = new Date();
+        } else {
+          report.unverifiedConfirmations += 1;
+        }
+      } else if (verificado) {
         report.refutations += 1;
+      } else {
+        report.unverifiedRefutations += 1;
       }
 
       // Suficientes refutaciones sobre confirmaciones: la situación cambió.
@@ -315,6 +343,7 @@ export class GeoService {
       if (
         acreditado &&
         dto.vote === VoteKind.REFUTE &&
+        verificado &&
         report.refutations >= 3 &&
         report.refutations > report.confirmations
       ) {
