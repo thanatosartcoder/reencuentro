@@ -11,7 +11,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { AuditService } from 'src/modules/audit/audit.service';
 import { CurrentOperator, OperatorGuard } from 'src/modules/auth/auth.guard';
 import { OperatorClaims } from 'src/modules/auth/auth.service';
@@ -27,6 +28,22 @@ import {
   toPublicMissing,
   toPublicSighting,
 } from './persons.presenter';
+
+class ListSightingsDto {
+  /**
+   * Cuántos avistamientos recientes devolver.
+   *
+   * Era la única ruta de listado sin DTO: leía `Number(limit) || 25` directo de
+   * la query, así que `?limit=1000000` cargaba en memoria un millón de filas con
+   * sus fotos unidas. Cien es el tope del resto del sistema.
+   */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+}
 
 class CloseReportDto {
   @IsString()
@@ -146,8 +163,8 @@ export class PersonsController {
   }
 
   @Get('avistamientos')
-  async listSightings(@Query('limit') limit?: string) {
-    const items = await this.persons.listRecentSightings(Number(limit) || 25);
+  async listSightings(@Query() query: ListSightingsDto) {
+    const items = await this.persons.listRecentSightings(query.limit ?? 25);
     return { items: items.map(toPublicSighting) };
   }
 
