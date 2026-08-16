@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import sharp from 'sharp';
+import type { OutputInfo, Sharp } from 'sharp';
 import { Semaphore } from 'src/common/concurrency/semaphore';
 import { tokensMatch } from 'src/common/crypto/tokens';
 import { StorageService } from 'src/modules/storage/storage.service';
@@ -193,7 +194,7 @@ export class PhotosService {
           kernel: 'lanczos3',
         });
 
-      let encoded: { data: Buffer; info: sharp.OutputInfo };
+      let encoded: { data: Buffer; info: OutputInfo };
       try {
         encoded = await this.encode(resized.clone(), this.format);
       } catch (error) {
@@ -319,9 +320,9 @@ export class PhotosService {
 
   /** Aplica los ajustes de codificación de un formato a una tubería ya redimensionada. */
   private encode(
-    pipeline: sharp.Sharp,
+    pipeline: Sharp,
     format: OutputFormat,
-  ): Promise<{ data: Buffer; info: sharp.OutputInfo }> {
+  ): Promise<{ data: Buffer; info: OutputInfo }> {
     const encoded =
       format === 'webp'
         ? pipeline.webp({
