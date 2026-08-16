@@ -45,6 +45,19 @@ function evaluatedCities(damage: DamageSummary): string[] {
     : damage.porCiudad.map((c) => c.ciudad);
 }
 
+/**
+ * Cómo se anuncia la emergencia según su estado.
+ *
+ * Una emergencia deja de ser aguda mucho antes de cerrarse: quedan casos
+ * abiertos durante meses. El rótulo distingue esos momentos para no pedir la
+ * misma urgencia en los tres.
+ */
+const ROTULO: Record<'ACTIVE' | 'MONITORING' | 'CLOSED', { texto: string; color: string }> = {
+  ACTIVE: { texto: 'Emergencia activa', color: 'var(--color-roja)' },
+  MONITORING: { texto: 'En seguimiento', color: 'var(--color-naranja)' },
+  CLOSED: { texto: 'Emergencia cerrada', color: 'var(--color-rule)' },
+};
+
 export default async function SituacionPage({
   searchParams,
 }: {
@@ -65,6 +78,7 @@ export default async function SituacionPage({
   // ella no tendría a dónde ir — el servidor atribuye todo reporte nuevo a la
   // emergencia en curso, que puede estar a mil kilómetros de lo que se mira.
   const soloConsulta = Boolean(data?.emergencia && !data.emergencia.enCurso);
+  const estado = data?.emergencia?.estado ?? 'ACTIVE';
 
   return (
     <div>
@@ -77,8 +91,12 @@ export default async function SituacionPage({
           qué pasó, dónde y cuánto tiempo lleva pasando. */}
       <section className="bg-ink text-paper">
         <div className="mx-auto max-w-5xl px-4 pb-8 pt-7">
-          <p className="eyebrow" style={{ color: 'var(--color-roja)' }}>
-            Emergencia activa
+          {/* El rótulo sigue al estado declarado, no es un texto fijo.
+              "Emergencia activa" sobre algo que terminó hace dos años sería
+              falso, y una plataforma que exagera su propia urgencia gasta la
+              atención que necesitará el día que la urgencia sea real. */}
+          <p className="eyebrow" style={{ color: ROTULO[estado].color }}>
+            {ROTULO[estado].texto}
           </p>
 
           {/* El título sale de la emergencia declarada, no de una constante:
