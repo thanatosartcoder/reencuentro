@@ -2,12 +2,14 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { Request } from 'express';
@@ -133,9 +135,20 @@ export class PersonsController {
     return toOperatorMissing(report);
   }
 
-  /** Seguimiento del caso por parte de quien lo reportó. */
+  /**
+   * Seguimiento del caso por parte de quien lo reportó.
+   *
+   * El token viaja en una cabecera y ya no en la URL. Es una credencial que da
+   * acceso a documento, teléfono, correo y notas médicas, y una URL no es un
+   * sitio donde guardar eso: queda en el registro de accesos del servidor y de
+   * cada intermediario, en el historial del navegador y en cualquier captura de
+   * pantalla que alguien mande pidiendo ayuda con la aplicación.
+   */
   @Get('mis-reportes')
-  async findByClaim(@Query('claimToken') claimToken: string) {
+  async findByClaim(@Headers('x-claim-token') claimToken?: string) {
+    if (!claimToken) {
+      throw new UnauthorizedException('Falta la cabecera X-Claim-Token');
+    }
     const report = await this.persons.findByClaimToken(claimToken);
     return toOwnerMissing(report);
   }

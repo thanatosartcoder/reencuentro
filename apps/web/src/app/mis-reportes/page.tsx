@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, claimHeader } from '@/lib/api';
 import { getStoredClaims, storeClaim, type StoredClaim } from '@/lib/device';
 import { useRealtime } from '@/lib/realtime';
 import { timeAgo } from '@/components/DecayMeter';
@@ -41,12 +41,10 @@ export default function MisReportesPage() {
   const loadClaim = useCallback(async (claim: StoredClaim) => {
     try {
       const [report, history] = await Promise.all([
-        api.get<OwnerReport>(
-          `/personas/mis-reportes?claimToken=${encodeURIComponent(claim.claimToken)}`,
-        ),
-        api.get<{ items: StoredNotification[] }>(
-          `/notifications?claimToken=${encodeURIComponent(claim.claimToken)}`,
-        ),
+        api.get<OwnerReport>('/personas/mis-reportes', { headers: claimHeader(claim.claimToken) }),
+        api.get<{ items: StoredNotification[] }>('/notifications', {
+          headers: claimHeader(claim.claimToken),
+        }),
       ]);
       setReports((current) => ({ ...current, [claim.claimToken]: report }));
       setNotifications((current) => ({ ...current, [claim.claimToken]: history.items }));
@@ -77,9 +75,9 @@ export default function MisReportesPage() {
     if (!token) return;
 
     try {
-      const report = await api.get<OwnerReport>(
-        `/personas/mis-reportes?claimToken=${encodeURIComponent(token)}`,
-      );
+      const report = await api.get<OwnerReport>('/personas/mis-reportes', {
+        headers: claimHeader(token),
+      });
       const claim: StoredClaim = {
         claimToken: token,
         fullName: report.fullName,
