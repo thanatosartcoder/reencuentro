@@ -121,7 +121,15 @@ export const configuration = () => ({
   },
 
   push: {
-    fcmServerKey: process.env.FCM_SERVER_KEY ?? '',
+    /**
+     * Cuenta de servicio de Firebase, en base64 o JSON en crudo.
+     *
+     * Sustituye a FCM_SERVER_KEY: la API legacy que usaba esa clave fue
+     * retirada por Google. Se lee y valida en `fcm.client.ts`, no aquí, porque
+     * una credencial mal formada no debe impedir arrancar la API — el push es
+     * opcional; recibir reportes no.
+     */
+    serviceAccount: process.env.FCM_SERVICE_ACCOUNT ?? '',
   },
 });
 
