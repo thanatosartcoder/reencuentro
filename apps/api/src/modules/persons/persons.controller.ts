@@ -168,10 +168,32 @@ export class PersonsController {
     return { items: items.map(toPublicSighting) };
   }
 
+  /**
+   * Vista completa de un avistamiento. Cada consulta queda en bitácora.
+   *
+   * Devuelve documento, teléfono del reportante y estado de salud — los mismos
+   * datos que su equivalente para desapariciones, que sí se registraba. Que la
+   * trazabilidad dependiera de por cuál de las dos puertas se entró era un hueco
+   * en lo que la Ley 1581 obliga a poder demostrar.
+   */
   @Get('avistamientos/:id')
   @UseGuards(OperatorGuard)
-  async findSighting(@Param('id', ParseUUIDPipe) id: string) {
-    return toOperatorSighting(await this.persons.findSightingById(id));
+  async findSighting(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentOperator() operator: OperatorClaims,
+    @Req() request: Request,
+  ) {
+    const sighting = await this.persons.findSightingById(id);
+    await this.audit.record({
+      actorId: operator.sub,
+      actorName: operator.name,
+      action: 'VIEW_PII',
+      entityType: 'SightingReport',
+      entityId: id,
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+    return toOperatorSighting(sighting);
   }
 
   // --------------------------------------------------------------------------
